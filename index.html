@@ -157,6 +157,10 @@ dialog::backdrop{background:rgba(5,8,20,.55);backdrop-filter:blur(3px)}
 .md pre code{border:0;padding:0;background:none}
 .md a{color:var(--accent2)}
 .md .ph{color:var(--muted);font-style:italic}
+.d-sec .c-count{margin-left:6px;text-transform:none;letter-spacing:0}
+.cmt{margin-bottom:12px}
+.cmt header{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12px;color:var(--muted)}
+.cmt .md{min-height:0;padding:10px 14px}
 .md-edit{display:block;width:100%;min-height:260px;resize:vertical;border-radius:12px;border:1px solid var(--line);background:var(--card);padding:12px 14px;outline:0;
   font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;line-height:1.6}
 .md-edit:focus{border-color:var(--accent)}
@@ -244,6 +248,10 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;gap:6px}
         <div class="md" id="dPreview"></div>
         <textarea class="md-edit" id="dEdit" placeholder="เขียนแบบ Markdown ได้ เช่น&#10;## งานย่อย&#10;- [ ] ทำเสียงหิน&#10;- [x] ทำเสียงไม้"></textarea>
         <div class="hint" id="dHint">ติ๊ก checklist ในโหมด "ดู" ได้เลย · Ctrl/⌘ + S เพื่อบันทึก</div>
+      </section>
+      <section class="d-sec" id="dComments" hidden>
+        <h4>Comment<span class="c-count" id="dCCount"></span></h4>
+        <div id="dCList"></div>
       </section>
     </div>
     <footer class="d-foot">
@@ -553,6 +561,34 @@ function openDrawer(id){
   const t = $('#dTitle'); t.value = D.title; grow(t);
   setTab('preview'); updateSave();
   drawer.querySelector('.d-head [data-close]').focus({preventScroll:true});
+  loadComments(i);
+}
+
+const qComments = `fragment CM on IssueCommentConnection{ totalCount nodes{ author{ login avatarUrl } body createdAt } }
+query($id:ID!){ node(id:$id){ ... on Issue{ comments(last:50){ ...CM } } ... on PullRequest{ comments(last:50){ ...CM } } } }`;
+async function loadComments(i){
+  const sec = $('#dComments'), list = $('#dCList'), count = $('#dCCount');
+  sec.hidden = i.type==='DRAFT_ISSUE';
+  count.textContent = '';
+  if(sec.hidden) return;
+  if(S.mode!=='live'){ list.innerHTML = '<p class="none">โหมดตัวอย่างไม่มี comment</p>'; return; }
+  list.innerHTML = '<p class="none">กำลังโหลด…</p>';
+  let c;
+  try{ c = (await gql(qComments, {id:i.contentId})).node?.comments; }
+  catch(e){ if(D && D.id===i.id) list.innerHTML = `<p class="none">โหลด comment ไม่ได้: ${esc(e.message)}</p>`; return; }
+  // The user may have opened another card while this request was in flight.
+  if(!D || D.id!==i.id) return;
+  const nodes = c?.nodes || [];
+  count.textContent = c?.totalCount ? `· ${c.totalCount}` : '';
+  if(!nodes.length){ list.innerHTML = '<p class="none">ยังไม่มี comment</p>'; return; }
+  const more = c.totalCount > nodes.length ? `<p class="none">แสดง ${nodes.length} อันล่าสุดจาก ${c.totalCount} — ที่เหลือเปิดดูใน GitHub</p>` : '';
+  list.innerHTML = more + nodes.map(n=>{
+    const who = n.author || {login:'ghost', avatarUrl:''};
+    const when = new Date(n.createdAt).toLocaleString('th-TH', {dateStyle:'medium', timeStyle:'short'});
+    // Checkboxes in a comment are read-only here; toggling them would need a comment edit.
+    const body = n.body.trim() ? mdRender(n.body).replace(/<input type="checkbox"/g, '<input type="checkbox" disabled') : '<p class="ph">(ว่าง)</p>';
+    return `<article class="cmt"><header>${personHTML(who)}<time>${esc(when)}</time></header><div class="md">${body}</div></article>`;
+  }).join('');
 }
 function closeDrawer(force=false){
   if(!D) return;
