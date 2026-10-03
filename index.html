@@ -133,6 +133,13 @@ dialog::backdrop{background:rgba(5,8,20,.55);backdrop-filter:blur(3px)}
 .d-props dd{margin:0;display:flex;flex-wrap:wrap;gap:6px;align-items:center;min-width:0}
 .d-props select{padding:6px 10px;border-radius:10px;border:1px solid var(--line);background:var(--card);outline:0;max-width:100%}
 .d-props select:focus{border-color:var(--accent)}
+#dLabels{display:contents}
+.link-btn{background:none;border:0;color:var(--accent2);font-weight:700;font-size:12px;cursor:pointer;padding:2px 4px}
+.lbl-pick{flex-basis:100%;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:6px;max-height:240px;overflow:auto}
+.lbl-pick label{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:8px;cursor:pointer}
+.lbl-pick label:hover{background:var(--card-h)}
+.lbl-pick input{accent-color:var(--accent);margin:0}
+.lbl-pick .sw{width:10px;height:10px;border-radius:50%;flex:none}
 .none{color:var(--muted)}
 .person{display:inline-flex;align-items:center;gap:6px;font-weight:700;background:var(--card);border:1px solid var(--line);border-radius:99px;padding:2px 10px 2px 3px}
 .person img,.person .av{width:20px;height:20px;border-radius:50%;object-fit:cover;display:grid;place-items:center;font-size:10px;font-weight:800;background:var(--accent2);color:#fff}
@@ -241,7 +248,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;gap:6px}
       <textarea class="d-title" id="dTitle" rows="1" aria-label="ชื่องาน"></textarea>
       <dl class="d-props">
         <dt>สถานะในบอร์ด</dt><dd><select id="dStatus" aria-label="สถานะ"></select></dd>
-        <dt>Label</dt><dd id="dLabels"></dd>
+        <dt>Label</dt><dd><span id="dLabels"></span><button type="button" class="link-btn" id="dLblEdit">แก้</button><div class="lbl-pick" id="dLblPick" hidden></div></dd>
         <dt>ผู้รับผิดชอบ</dt><dd id="dPeople"></dd>
         <dt>ประเภท</dt><dd id="dState"></dd>
       </dl>
@@ -562,7 +569,9 @@ function openDrawer(id){
   $('#dWhere').textContent = i.repo ? `${i.repo}${i.number ? ' #'+i.number : ''}` : 'Draft issue';
   $('#dStatus').innerHTML = columns().map(c=>`<option value="${c.id ?? ''}">${esc(c.name)}</option>`).join('');
   $('#dStatus').value = i.status || '';
-  $('#dLabels').innerHTML = i.labels.length ? i.labels.map(labelHTML).join('') : '<span class="none">—</span>';
+  showLabels(i);
+  $('#dLblEdit').hidden = S.mode!=='live' || i.type==='DRAFT_ISSUE';
+  $('#dLblPick').hidden = true;
   $('#dPeople').innerHTML = i.assignees.length ? i.assignees.map(personHTML).join('') : '<span class="none">ยังไม่มี</span>';
   $('#dState').innerHTML = i.type==='DRAFT_ISSUE' ? '<span class="none">Draft (ยังไม่เป็น issue)</span>'
     : `<span class="st ${closed?'closed':'open'}">${i.type==='PULL_REQUEST'?'PR · ':'Issue · '}${i.state==='MERGED'?'Merged':closed?'Closed':'Open'}</span>`;
@@ -595,6 +604,54 @@ async function sendComment(){
 $('#dCText').addEventListener('input', updateSend);
 $('#dCText').addEventListener('keydown', e=>{ if((e.metaKey || e.ctrlKey) && e.key==='Enter'){ e.preventDefault(); sendComment(); } });
 $('#dCSend').addEventListener('click', sendComment);
+
+function showLabels(i){
+  $('#dLabels').innerHTML = i.labels.length ? i.labels.map(labelHTML).join('') : '<span class="none">—</span>';
+}
+const repoLabels = new Map();
+const qRepoLabels = `query($o:String!,$n:String!){ repository(owner:$o,name:$n){ labels(first:100, orderBy:{field:NAME, direction:ASC}){ nodes{ id name color } } } }`;
+const mAddLabels = `mutation($id:ID!,$l:[ID!]!){ addLabelsToLabelable(input:{labelableId:$id,labelIds:$l}){ clientMutationId } }`;
+const mRemoveLabels = `mutation($id:ID!,$l:[ID!]!){ removeLabelsFromLabelable(input:{labelableId:$id,labelIds:$l}){ clientMutationId } }`;
+async function toggleLabelPicker(){
+  const i = curItem(), pick = $('#dLblPick'); if(!i) return;
+  if(!pick.hidden){ pick.hidden = true; return; }
+  pick.hidden = false;
+  let all = repoLabels.get(i.repo);
+  if(!all){
+    pick.innerHTML = '<p class="none">กำลังโหลด…</p>';
+    const [o, n] = i.repo.split('/');
+    try{ all = (await gql(qRepoLabels, {o, n})).repository.labels.nodes; repoLabels.set(i.repo, all); }
+    catch(e){ if(D && D.id===i.id) pick.innerHTML = `<p class="none">โหลด label ไม่ได้: ${esc(e.message)}</p>`; return; }
+  }
+  if(!D || D.id!==i.id || pick.hidden) return;
+  renderLabelPicker(i);
+}
+function renderLabelPicker(i){
+  const all = repoLabels.get(i.repo) || [], on = new Set(i.labels.map(l=>l.name));
+  $('#dLblPick').innerHTML = all.length
+    ? all.map(l=>`<label><input type="checkbox" data-label="${esc(l.id)}" ${on.has(l.name)?'checked':''}><span class="sw" style="background:#${esc(l.color)}"></span>${esc(l.name)}</label>`).join('')
+    : '<p class="none">รีโปนี้ยังไม่มี label</p>';
+}
+function applyLabel(i, l, add){
+  i.labels = add ? [...i.labels.filter(x=>x.name!==l.name), {name:l.name, color:l.color}] : i.labels.filter(x=>x.name!==l.name);
+  if(curItem()===i) showLabels(i);
+  render();
+}
+$('#dLblEdit').addEventListener('click', toggleLabelPicker);
+$('#dLblPick').addEventListener('change', async e=>{
+  const id = e.target.dataset.label, i = curItem(); if(!id || !i) return;
+  const l = repoLabels.get(i.repo).find(x=>x.id===id), add = e.target.checked;
+  applyLabel(i, l, add);
+  e.target.disabled = true;
+  try{ await gql(add ? mAddLabels : mRemoveLabels, {id:i.contentId, l:[id]}); }
+  catch(err){
+    // Undo only this label, so a second toggle that succeeded meanwhile is kept.
+    applyLabel(i, l, !add); toast(err.message, true);
+    if(curItem()===i) renderLabelPicker(i);
+    return;
+  }
+  e.target.disabled = false;
+});
 
 const qComments = `fragment CM on IssueCommentConnection{ totalCount nodes{ author{ login avatarUrl } body createdAt } }
 query($id:ID!){ node(id:$id){ ... on Issue{ comments(last:50){ ...CM } } ... on PullRequest{ comments(last:50){ ...CM } } } }`;
