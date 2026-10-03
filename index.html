@@ -137,6 +137,9 @@ dialog::backdrop{background:rgba(5,8,20,.55);backdrop-filter:blur(3px)}
 .d-props dd{margin:0;display:flex;flex-wrap:wrap;gap:6px;align-items:center;min-width:0}
 .d-props select{padding:6px 10px;border-radius:10px;border:1px solid var(--line);background:var(--card);outline:0;max-width:100%}
 .d-props select:focus{border-color:var(--accent)}
+.d-props input[type=date]{padding:5px 10px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:inherit;font:inherit;outline:0;color-scheme:dark}
+.d-props input[type=date]:focus{border-color:var(--accent)}
+:root[data-theme="light"] .d-props input[type=date]{color-scheme:light}
 #dLabels{display:contents}
 .link-btn{background:none;border:0;color:var(--accent2);font-weight:700;font-size:12px;cursor:pointer;padding:2px 4px}
 .lbl-pick{flex-basis:100%;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:6px;max-height:240px;overflow:auto}
@@ -252,7 +255,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;gap:6px}
       <textarea class="d-title" id="dTitle" rows="1" aria-label="ชื่องาน"></textarea>
       <dl class="d-props">
         <dt>สถานะในบอร์ด</dt><dd><select id="dStatus" aria-label="สถานะ"></select></dd>
-        <dt id="dDueT">กำหนดส่ง</dt><dd id="dDue"></dd>
+        <dt id="dDueT">กำหนดส่ง</dt><dd id="dDue"><input type="date" id="dDueIn" aria-label="กำหนดส่ง"><span id="dDueHint"></span><button type="button" class="link-btn" id="dDueClear">ล้าง</button></dd>
         <dt>Label</dt><dd><span id="dLabels"></span><button type="button" class="link-btn" id="dLblEdit">แก้</button><div class="lbl-pick" id="dLblPick" hidden></div></dd>
         <dt>ผู้รับผิดชอบ</dt><dd id="dPeople"></dd>
         <dt>ประเภท</dt><dd id="dState"></dd>
@@ -604,8 +607,7 @@ function openDrawer(id){
   $('#dStatus').innerHTML = columns().map(c=>`<option value="${c.id ?? ''}">${esc(c.name)}</option>`).join('');
   $('#dStatus').value = i.status || '';
   $('#dDueT').hidden = $('#dDue').hidden = !S.dueField;
-  const dp = dueParts(i);
-  $('#dDue').innerHTML = dp ? `${dueHTML(i)}<span class="none">${dp.hint}</span>` : '<span class="none">—</span>';
+  showDue(i);
   showLabels(i);
   $('#dLblEdit').hidden = S.mode!=='live' || i.type==='DRAFT_ISSUE';
   $('#dLblPick').hidden = true;
@@ -641,6 +643,32 @@ async function sendComment(){
 $('#dCText').addEventListener('input', updateSend);
 $('#dCText').addEventListener('keydown', e=>{ if((e.metaKey || e.ctrlKey) && e.key==='Enter'){ e.preventDefault(); sendComment(); } });
 $('#dCSend').addEventListener('click', sendComment);
+
+function showDue(i){
+  const p = dueParts(i);
+  $('#dDueIn').value = i.due || '';
+  $('#dDueHint').innerHTML = p ? `<span class="due ${p.cls}">${p.hint}</span>` : '';
+  $('#dDueClear').hidden = !i.due;
+}
+const mSetDate = `mutation($p:ID!,$i:ID!,$f:ID!,$d:Date!){
+  updateProjectV2ItemFieldValue(input:{projectId:$p,itemId:$i,fieldId:$f,value:{date:$d}}){ projectV2Item{ id } } }`;
+async function setDue(i, date){
+  if((i.due || null)===date) return;
+  const prev = i.due;
+  i.due = date; if(curItem()===i) showDue(i); render();
+  if(S.mode!=='live') return toast('ตั้งกำหนดส่งแล้ว (โหมดตัวอย่าง)');
+  try{
+    if(date) await gql(mSetDate, {p:S.project.id, i:i.id, f:S.dueField, d:date});
+    else await gql(mClearStatus, {p:S.project.id, i:i.id, f:S.dueField});
+    toast('อัปเดต GitHub แล้ว');
+  }catch(e){
+    // Roll back only if no newer date was picked while this request was in flight.
+    if(i.due===date){ i.due = prev; if(curItem()===i) showDue(i); render(); }
+    toast(e.message, true);
+  }
+}
+$('#dDueIn').addEventListener('change', e=>{ const i = curItem(); if(i) setDue(i, e.target.value || null); });
+$('#dDueClear').addEventListener('click', ()=>{ const i = curItem(); if(i) setDue(i, null); });
 
 function showLabels(i){
   $('#dLabels').innerHTML = i.labels.length ? i.labels.map(labelHTML).join('') : '<span class="none">—</span>';
