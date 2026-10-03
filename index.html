@@ -161,6 +161,10 @@ dialog::backdrop{background:rgba(5,8,20,.55);backdrop-filter:blur(3px)}
 .cmt{margin-bottom:12px}
 .cmt header{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12px;color:var(--muted)}
 .cmt .md{min-height:0;padding:10px 14px}
+.c-new{margin-top:4px}
+.c-new .md-edit{min-height:90px}
+.c-new .row{display:flex;align-items:center;gap:8px;margin-top:8px}
+.c-new .row .hint{margin:0;flex:1}
 .md-edit{display:block;width:100%;min-height:260px;resize:vertical;border-radius:12px;border:1px solid var(--line);background:var(--card);padding:12px 14px;outline:0;
   font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;line-height:1.6}
 .md-edit:focus{border-color:var(--accent)}
@@ -252,6 +256,13 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;gap:6px}
       <section class="d-sec" id="dComments" hidden>
         <h4>Comment<span class="c-count" id="dCCount"></span></h4>
         <div id="dCList"></div>
+        <div class="c-new" id="dCNew">
+          <textarea class="md-edit" id="dCText" placeholder="เขียน comment (Markdown ได้)" aria-label="comment ใหม่"></textarea>
+          <div class="row">
+            <span class="hint">Ctrl/⌘ + Enter เพื่อส่ง</span>
+            <button type="button" class="btn primary" id="dCSend" disabled>ส่ง comment</button>
+          </div>
+        </div>
       </section>
     </div>
     <footer class="d-foot">
@@ -543,7 +554,7 @@ function setTab(tab){
 }
 function openDrawer(id){
   const i = S.items.find(x=>x.id===id); if(!i) return;
-  if(D && D.id!==id && isDirty()) return toast('บันทึกหรือทิ้งการแก้ไขของการ์ดเดิมก่อนนะครับ', true);
+  if(D && D.id!==id && (isDirty() || hasUnsentComment())) return toast('บันทึกหรือทิ้งการแก้ไขของการ์ดเดิมก่อนนะครับ', true);
   closeMenu();
   D = {id, title:i.title, body:i.body||'', tab:'preview', saving:false, last:D?.last || document.activeElement};
   const closed = i.state==='CLOSED' || i.state==='MERGED';
@@ -561,8 +572,29 @@ function openDrawer(id){
   const t = $('#dTitle'); t.value = D.title; grow(t);
   setTab('preview'); updateSave();
   drawer.querySelector('.d-head [data-close]').focus({preventScroll:true});
+  $('#dCText').value = ''; D.sending = false; updateSend();
   loadComments(i);
 }
+
+const hasUnsentComment = ()=> !!(D && $('#dCText').value.trim());
+function updateSend(){
+  const b = $('#dCSend'); b.disabled = !hasUnsentComment() || D.sending;
+  b.textContent = D.sending ? 'กำลังส่ง…' : 'ส่ง comment'; closeArmed = false;
+}
+const mAddComment = `mutation($s:ID!,$b:String!){ addComment(input:{subjectId:$s,body:$b}){ clientMutationId } }`;
+async function sendComment(){
+  const i = curItem(); if(!i || !hasUnsentComment() || D.sending) return;
+  D.sending = true; updateSend();
+  try{ await gql(mAddComment, {s:i.contentId, b:$('#dCText').value}); }
+  catch(e){ if(D && D.id===i.id){ D.sending = false; updateSend(); } return toast(e.message, true); }
+  if(!D || D.id!==i.id) return;
+  $('#dCText').value = ''; D.sending = false; updateSend();
+  toast('ส่ง comment แล้ว');
+  loadComments(i);
+}
+$('#dCText').addEventListener('input', updateSend);
+$('#dCText').addEventListener('keydown', e=>{ if((e.metaKey || e.ctrlKey) && e.key==='Enter'){ e.preventDefault(); sendComment(); } });
+$('#dCSend').addEventListener('click', sendComment);
 
 const qComments = `fragment CM on IssueCommentConnection{ totalCount nodes{ author{ login avatarUrl } body createdAt } }
 query($id:ID!){ node(id:$id){ ... on Issue{ comments(last:50){ ...CM } } ... on PullRequest{ comments(last:50){ ...CM } } } }`;
@@ -571,6 +603,7 @@ async function loadComments(i){
   sec.hidden = i.type==='DRAFT_ISSUE';
   count.textContent = '';
   if(sec.hidden) return;
+  $('#dCNew').hidden = S.mode!=='live';
   if(S.mode!=='live'){ list.innerHTML = '<p class="none">โหมดตัวอย่างไม่มี comment</p>'; return; }
   list.innerHTML = '<p class="none">กำลังโหลด…</p>';
   let c;
@@ -592,7 +625,7 @@ async function loadComments(i){
 }
 function closeDrawer(force=false){
   if(!D) return;
-  if(!force && isDirty() && !closeArmed){ closeArmed = true; return toast('ยังไม่ได้บันทึก — กดปิดอีกครั้งเพื่อทิ้งการแก้ไข', true); }
+  if(!force && (isDirty() || hasUnsentComment()) && !closeArmed){ closeArmed = true; return toast('ยังไม่ได้บันทึก — กดปิดอีกครั้งเพื่อทิ้งการแก้ไข', true); }
   drawer.classList.remove('open'); drawer.setAttribute('aria-hidden','true');
   const last = D.last; D = null; closeArmed = false;
   if(last && document.contains(last)) last.focus({preventScroll:true});
