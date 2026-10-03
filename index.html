@@ -280,20 +280,20 @@ function demoData(){
   const L = (name,color)=>({name,color});
   const A = l=>({login:l,avatarUrl:''});
   let n = 0;
-  const it = (status,title,extra={}) => ({id:'d'+(++n),status,title,type:'ISSUE',repo:'owlhoursspace/RoomToBloom',number:40+n,url:'',state:'OPEN',body:'',labels:[],assignees:[A('nares')],...extra});
+  const it = (status,title,extra={}) => ({id:'d'+(++n),status,title,type:'ISSUE',repo:'example/sample-project',number:40+n,url:'',state:'OPEN',body:'',labels:[],assignees:[A('sample-user')],...extra});
   return {
-    project:{id:'demo',title:'Room to Bloom — Roadmap'},
+    project:{id:'demo',title:'Sample Project'},
     field:{id:'f',options:[opt('todo','Backlog','GRAY'),opt('ready','Todo','BLUE'),opt('doing','In Progress','YELLOW'),opt('review','Review','PURPLE'),opt('done','Done','GREEN')]},
     items:[
-      it('todo','ระบบ save/load ห้องลง cloud',{body:'ให้ผู้เล่นเล่นต่อข้ามเครื่องได้\n\n## งานย่อย\n- [ ] เลือกบริการ (Unity Cloud Save / Steam Cloud)\n- [ ] serialize ห้องเป็น JSON\n- [ ] จัดการ conflict เมื่อเล่นสองเครื่อง',labels:[L('feature','5b8def'),L('backend','8b93a7')]}),
-      it('todo','ไอเดีย: ต้นไม้โตตามเวลาจริง',{type:'DRAFT_ISSUE',repo:'',number:null,labels:[L('idea','e879b9')],assignees:[]}),
-      it('ready','เสียงวางบล็อกแต่ละวัสดุ (ไม้ / หิน / ผ้า)',{body:'โทนนุ่มๆ ไม่แหลม เข้ากับบรรยากาศ cozy\n\n- [x] ไม้\n- [ ] หิน\n- [ ] ผ้า\n- [ ] สุ่ม pitch ±5% กันเสียงซ้ำ',labels:[L('audio','f0904a')]}),
-      it('ready','UI Blur สำหรับเมนู pause',{repo:'owlhoursspace/UIBlurPro',labels:[L('shader','a17cf0'),L('UI','5b8def')]}),
-      it('doing','Snap grid เมื่อหมุนบล็อก 45°',{body:'หมุนบล็อก 45° แล้วตำแหน่ง snap **เพี้ยนไปครึ่งช่อง**\n\n### ขั้นตอนทำซ้ำ\n- วางบล็อกไม้ 2x1\n- กด `R` หมุน 45°\n- ลากไปชิดผนัง\n\n### งานย่อย\n- [x] หาสาเหตุใน `GridSnapper.cs`\n- [ ] ปัด pivot ให้อยู่กลางช่อง\n- [ ] เขียน test หมุน 8 ทิศ',labels:[L('gameplay','4cc38a'),L('bug','ef6461')]}),
-      it('doing','Ambient loop กลางคืน + เสียงจิ้งหรีด',{labels:[L('audio','f0904a')]}),
-      it('review','ปรับ lighting URP ให้ warm ขึ้น',{type:'PULL_REQUEST',labels:[L('art','e6c04a')]}),
-      it('done','หน้า Steam: capsule art v2',{state:'CLOSED',labels:[L('marketing','e879b9')]}),
-      it('done','Undo / Redo การวางบล็อก',{state:'CLOSED',labels:[L('feature','5b8def')]})
+      it('todo','Save settings between sessions',{body:'Sample card. Remember the user\'s choices after a restart.\n\n## Tasks\n- [ ] Pick a storage format\n- [ ] Load on startup\n- [ ] Handle a missing or corrupt file',labels:[L('feature','5b8def'),L('backend','8b93a7')]}),
+      it('todo','Idea: keyboard shortcuts',{type:'DRAFT_ISSUE',repo:'',number:null,labels:[L('idea','e879b9')],assignees:[]}),
+      it('ready','Sound for button clicks',{body:'Sample card.\n\n- [x] Primary button\n- [ ] Secondary button\n- [ ] Disabled state',labels:[L('audio','f0904a')]}),
+      it('ready','Dark mode for the settings page',{labels:[L('UI','5b8def')]}),
+      it('doing','List jumps when an item is removed',{body:'Sample card. Removing an item **scrolls the list to the top**.\n\n### Steps to reproduce\n- Open a long list\n- Scroll halfway down\n- Remove any item\n\n### Tasks\n- [x] Find the cause\n- [ ] Keep the scroll position\n- [ ] Add a test',labels:[L('bug','ef6461')]}),
+      it('doing','Loading spinner',{labels:[L('UI','5b8def')]}),
+      it('review','Update colour palette',{type:'PULL_REQUEST',labels:[L('art','e6c04a')]}),
+      it('done','Write the README',{state:'CLOSED',labels:[L('docs','e879b9')]}),
+      it('done','Undo / Redo',{state:'CLOSED',labels:[L('feature','5b8def')]})
     ]
   };
 }
