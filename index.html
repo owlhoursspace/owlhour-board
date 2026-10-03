@@ -1,0 +1,648 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OwlHour Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0f1222; --bg2:#151a30; --col:#181e36; --card:#222a47; --card-h:#2a3358;
+  --text:#e8ebf7; --muted:#97a0c2; --line:#2c3558; --accent:#f5b84a; --accent-ink:#2a1d05;
+  --accent2:#7c8cff; --shadow:0 8px 24px rgba(0,0,0,.35); --r:14px;
+  --glow:radial-gradient(1200px 500px at 85% -10%, rgba(124,140,255,.18), transparent 60%),
+         radial-gradient(900px 400px at -10% 0%, rgba(245,184,74,.10), transparent 60%);
+}
+:root[data-theme="light"]{
+  --bg:#f6f2e9; --bg2:#fffaf0; --col:#efe8d9; --card:#ffffff; --card-h:#fffdf6;
+  --text:#2a2440; --muted:#6f6888; --line:#e0d6c1; --accent:#d98a0b; --accent-ink:#fff;
+  --accent2:#5662d6; --shadow:0 4px 14px rgba(60,40,10,.10);
+  --glow:radial-gradient(1000px 400px at 90% -10%, rgba(217,138,11,.12), transparent 60%);
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);background-image:var(--glow);background-attachment:fixed;color:var(--text);
+  font-family:"Nunito","Noto Sans Thai",system-ui,sans-serif;font-size:15px;-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit;color:inherit}
+
+/* Header */
+.top{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:12px;padding:14px 20px;
+  background:color-mix(in srgb,var(--bg) 82%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px;min-width:0}
+.brand svg{flex:none}
+.brand h1{margin:0;font-size:18px;font-weight:800;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.brand small{display:block;color:var(--muted);font-size:12px;font-weight:600}
+.pill{font-size:11px;font-weight:700;padding:3px 8px;border-radius:99px;background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--accent);white-space:nowrap}
+.pill.live{background:color-mix(in srgb,#4cc38a 18%,transparent);color:#4cc38a}
+.spacer{flex:1}
+.search{display:flex;align-items:center;gap:8px;background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:7px 10px;min-width:180px;flex:0 1 260px}
+.search input{border:0;outline:0;background:transparent;width:100%}
+.icon{border:1px solid var(--line);background:var(--bg2);width:36px;height:36px;border-radius:10px;display:grid;place-items:center;cursor:pointer;transition:.15s}
+.icon:hover{border-color:var(--accent);color:var(--accent)}
+.icon.spin svg{animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Board */
+.board{display:flex;gap:16px;align-items:flex-start;padding:20px;overflow-x:auto;min-height:calc(100vh - 70px);scroll-snap-type:x proximity;scroll-padding-inline:20px}
+.col{flex:0 0 min(86vw,310px);scroll-snap-align:start;background:var(--col);border:1px solid var(--line);border-radius:18px;padding:12px;display:flex;flex-direction:column;max-height:calc(100vh - 110px);transition:border-color .15s, box-shadow .15s}
+.col.over{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 25%,transparent)}
+.col-h{display:flex;align-items:center;gap:8px;padding:4px 4px 10px}
+.col-h h2{margin:0;font-size:14px;font-weight:800;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dot{width:10px;height:10px;border-radius:50%;flex:none;box-shadow:0 0 10px currentColor}
+.count{font-size:12px;font-weight:700;color:var(--muted);background:var(--bg2);border-radius:99px;padding:2px 8px}
+.col-h .icon{width:28px;height:28px;border-radius:8px;font-size:18px;line-height:1}
+.list{display:flex;flex-direction:column;gap:10px;overflow-y:auto;padding:2px;min-height:60px}
+.empty{color:var(--muted);font-size:13px;text-align:center;border:1.5px dashed var(--line);border-radius:12px;padding:18px 8px}
+
+/* Card */
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:11px 12px;cursor:grab;box-shadow:0 1px 0 rgba(0,0,0,.08);transition:transform .12s, box-shadow .12s, background .12s;position:relative}
+.card:hover{background:var(--card-h);box-shadow:var(--shadow);transform:translateY(-1px)}
+.card.dragging{opacity:.45;transform:rotate(1.5deg)}
+.card .meta{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);font-weight:600}
+.card .meta .more{margin-left:auto;width:26px;height:26px;border-radius:8px;border:0;background:transparent;opacity:.6}
+.card:hover .meta .more,.card .meta .more:focus{opacity:1}
+.type{display:inline-grid;place-items:center;color:#4cc38a}
+.type.closed{color:#a17cf0}
+.type.draft{color:var(--muted)}
+.card h3{margin:6px 0 0;font-size:14.5px;font-weight:700;line-height:1.4;word-break:break-word}
+.card h3 a{color:inherit;text-decoration:none}
+.card h3 a:hover{color:var(--accent)}
+.labels{display:flex;flex-wrap:wrap;gap:5px;margin-top:9px}
+.label{font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;border:1px solid}
+.foot{display:flex;align-items:center;margin-top:9px}
+.avatars{display:flex;margin-left:auto}
+.prog{font-size:12px;font-weight:700;color:var(--muted);background:var(--bg2);border-radius:99px;padding:1px 8px}
+.avatars img,.avatars span{width:22px;height:22px;border-radius:50%;border:2px solid var(--card);margin-left:-6px;display:grid;place-items:center;font-size:10px;font-weight:800;background:var(--accent2);color:#fff;object-fit:cover}
+
+/* Add form */
+.add-form{margin-top:10px;display:flex;flex-direction:column;gap:8px}
+.add-form[hidden]{display:none}
+.add-form textarea{width:100%;resize:vertical;border-radius:12px;border:1px solid var(--line);background:var(--card);padding:10px;outline:0}
+.add-form textarea:focus{border-color:var(--accent)}
+.row{display:flex;gap:8px}
+.btn{border:1px solid var(--line);background:var(--bg2);padding:8px 14px;border-radius:10px;cursor:pointer;font-weight:700}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.ghost{background:transparent}
+
+/* Move menu */
+.menu{position:fixed;z-index:50;background:var(--bg2);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:6px;min-width:190px}
+.menu p{margin:4px 8px 6px;font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.5px}
+.menu button{display:flex;align-items:center;gap:8px;width:100%;text-align:left;border:0;background:transparent;padding:8px;border-radius:8px;cursor:pointer;font-weight:600}
+.menu button:hover{background:var(--card)}
+.menu button[disabled]{opacity:.4;cursor:default}
+
+/* Modal */
+dialog{border:1px solid var(--line);border-radius:18px;background:var(--bg2);color:var(--text);padding:0;width:min(440px,calc(100vw - 32px));box-shadow:var(--shadow)}
+dialog::backdrop{background:rgba(5,8,20,.55);backdrop-filter:blur(3px)}
+.modal{padding:20px;display:flex;flex-direction:column;gap:12px}
+.modal h2{margin:0;font-size:18px}
+.modal p{margin:0;color:var(--muted);font-size:13px;line-height:1.5}
+.field label{display:block;font-size:12px;font-weight:700;color:var(--muted);margin-bottom:5px}
+.field input,.field select{width:100%;padding:9px 11px;border-radius:10px;border:1px solid var(--line);background:var(--card);outline:0}
+.field input:focus,.field select:focus{border-color:var(--accent)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.check{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
+.modal .row{justify-content:flex-end;flex-wrap:wrap}
+
+/* Toast */
+.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(20px);opacity:0;background:var(--text);color:var(--bg);padding:10px 16px;border-radius:12px;font-weight:700;font-size:13px;transition:.25s;z-index:60;max-width:calc(100vw - 32px)}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast.err{background:#ef6461;color:#fff}
+
+/* Drawer */
+.card{cursor:pointer}
+.card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.drawer-wrap{position:fixed;inset:0;z-index:40;pointer-events:none}
+.scrim{position:absolute;inset:0;background:rgba(5,8,20,.45);opacity:0;transition:opacity .2s}
+.drawer{position:absolute;top:0;right:0;height:100%;width:min(540px,100vw);background:var(--bg2);border-left:1px solid var(--line);
+  box-shadow:-12px 0 40px rgba(0,0,0,.25);transform:translateX(102%);transition:transform .28s cubic-bezier(.2,.8,.2,1);display:flex;flex-direction:column}
+.drawer-wrap.open{pointer-events:auto}
+.drawer-wrap.open .scrim{opacity:1}
+.drawer-wrap.open .drawer{transform:none}
+.d-head{display:flex;align-items:center;gap:8px;padding:12px 16px 12px 20px;border-bottom:1px solid var(--line);font-size:13px;color:var(--muted);font-weight:700}
+.d-head #dWhere{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.d-body{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:18px}
+.d-title{display:block;width:calc(100% + 16px);font-size:21px;font-weight:800;line-height:1.35;border:1px solid transparent;background:transparent;border-radius:10px;
+  padding:6px 8px;margin:-6px -8px;resize:none;outline:0;overflow:hidden}
+.d-title:hover{border-color:var(--line)}
+.d-title:focus{border-color:var(--accent);background:var(--card)}
+.d-props{display:grid;grid-template-columns:118px 1fr;gap:12px;align-items:center;margin:0;font-size:13px}
+.d-props dt{color:var(--muted);font-weight:700}
+.d-props dd{margin:0;display:flex;flex-wrap:wrap;gap:6px;align-items:center;min-width:0}
+.d-props select{padding:6px 10px;border-radius:10px;border:1px solid var(--line);background:var(--card);outline:0;max-width:100%}
+.d-props select:focus{border-color:var(--accent)}
+.none{color:var(--muted)}
+.person{display:inline-flex;align-items:center;gap:6px;font-weight:700;background:var(--card);border:1px solid var(--line);border-radius:99px;padding:2px 10px 2px 3px}
+.person img,.person .av{width:20px;height:20px;border-radius:50%;object-fit:cover;display:grid;place-items:center;font-size:10px;font-weight:800;background:var(--accent2);color:#fff}
+.st{font-size:12px;font-weight:800;padding:2px 10px;border-radius:99px}
+.st.open{color:#4cc38a;background:color-mix(in srgb,#4cc38a 16%,transparent)}
+.st.closed{color:#a17cf0;background:color-mix(in srgb,#a17cf0 16%,transparent)}
+.d-sec h4{margin:0 0 8px;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;display:flex;align-items:center}
+.tabs{margin-left:auto;display:flex;background:var(--card);border:1px solid var(--line);border-radius:9px;padding:2px}
+.tabs button{border:0;background:transparent;padding:4px 12px;min-width:46px;border-radius:7px;font-size:12px;font-weight:800;cursor:pointer;color:var(--muted);text-transform:none;letter-spacing:0}
+.tabs button.on{background:var(--accent);color:var(--accent-ink)}
+.md{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 16px;font-size:14px;line-height:1.7;min-height:140px;word-break:break-word}
+.md>:first-child{margin-top:0}.md>:last-child{margin-bottom:0}
+.md h3,.md h4,.md h5{margin:.9em 0 .3em;font-size:15px;font-weight:800}
+.md p{margin:.45em 0}
+.md ul{margin:.45em 0;padding-left:1.3em}
+.md li.task{list-style:none;margin-left:-1.3em}
+.md li.task label{display:flex;gap:8px;align-items:flex-start;cursor:pointer}
+.md li.task input{accent-color:var(--accent);width:16px;height:16px;margin:.3em 0 0;flex:none;cursor:pointer}
+.md li.task input:checked+span{color:var(--muted);text-decoration:line-through}
+.md code{background:var(--bg2);border:1px solid var(--line);padding:0 5px;border-radius:5px;font-size:.88em;font-family:ui-monospace,Menlo,Consolas,monospace}
+.md pre{background:var(--bg2);border:1px solid var(--line);padding:10px 12px;border-radius:9px;overflow:auto}
+.md pre code{border:0;padding:0;background:none}
+.md a{color:var(--accent2)}
+.md .ph{color:var(--muted);font-style:italic}
+.md-edit{display:block;width:100%;min-height:260px;resize:vertical;border-radius:12px;border:1px solid var(--line);background:var(--card);padding:12px 14px;outline:0;
+  font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;line-height:1.6}
+.md-edit:focus{border-color:var(--accent)}
+.hint{font-size:12px;color:var(--muted);margin-top:6px}
+.d-foot{display:flex;align-items:center;gap:8px;padding:12px 20px;border-top:1px solid var(--line);flex-wrap:wrap}
+a.btn{text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+.btn[disabled]{opacity:.45;cursor:default}
+[hidden]{display:none !important}
+
+@media (max-width:600px){
+  .d-body{padding:16px}
+  .d-props{grid-template-columns:96px 1fr}
+  .d-head{padding-left:16px}
+  .d-foot{padding:12px 16px}
+  .top{padding:12px 16px}
+  .search{order:5;flex:1 1 100%}
+  .board{padding:16px;gap:12px;scroll-padding-inline:16px}
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <svg width="34" height="34" viewBox="0 0 64 64" aria-hidden="true">
+      <path d="M12 14 L22 22 L32 18 L42 22 L52 14 L50 36 C50 50 42 58 32 58 C22 58 14 50 14 36 Z" fill="var(--card)" stroke="var(--accent)" stroke-width="3" stroke-linejoin="round"/>
+      <circle cx="24" cy="34" r="7" fill="var(--bg)" stroke="var(--accent)" stroke-width="3"/>
+      <circle cx="40" cy="34" r="7" fill="var(--bg)" stroke="var(--accent)" stroke-width="3"/>
+      <circle cx="25" cy="34" r="2.6" fill="var(--accent)"/><circle cx="41" cy="34" r="2.6" fill="var(--accent)"/>
+      <path d="M29 42 L32 47 L35 42 Z" fill="var(--accent)"/>
+    </svg>
+    <div><h1 id="title">OwlHour Board</h1><small id="sub">GitHub Projects</small></div>
+  </div>
+  <span id="mode" class="pill">โหมดตัวอย่าง</span>
+  <div class="spacer"></div>
+  <label class="search">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+    <input id="q" placeholder="ค้นหางาน, label, repo…">
+  </label>
+  <button class="icon" id="refresh" title="รีเฟรช"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></button>
+  <button class="icon" id="theme" title="สลับธีม"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+  <button class="icon" id="settings" title="ตั้งค่า"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+</header>
+
+<main class="board" id="board"></main>
+
+<dialog id="dlg">
+  <form class="modal" method="dialog" id="cfgForm">
+    <h2>เชื่อมต่อ GitHub Project</h2>
+    <p>ใช้ Personal Access Token (classic) ที่มีสิทธิ์ <b>project</b> และ <b>repo</b> — token จะเก็บไว้ในเบราว์เซอร์เครื่องนี้เท่านั้น</p>
+    <div class="grid2">
+      <div class="field"><label>เจ้าของ</label>
+        <select id="fOwnerType"><option value="user">User</option><option value="organization">Organization</option></select></div>
+      <div class="field"><label>เลข Project</label><input id="fNumber" inputmode="numeric" placeholder="เช่น 1"></div>
+    </div>
+    <div class="field"><label>ชื่อผู้ใช้ / org</label><input id="fLogin" placeholder="owlhoursspace" autocomplete="off"></div>
+    <div class="field"><label>Token</label><input id="fToken" type="password" placeholder="ghp_…" autocomplete="off"></div>
+    <label class="check"><input type="checkbox" id="fRemember" checked> จำ token ไว้ในเครื่องนี้</label>
+    <div class="row">
+      <button type="button" class="btn ghost" id="useDemo">ใช้ข้อมูลตัวอย่าง</button>
+      <button type="button" class="btn" id="closeDlg">ปิด</button>
+      <button type="submit" class="btn primary">เชื่อมต่อ</button>
+    </div>
+  </form>
+</dialog>
+
+<div class="drawer-wrap" id="drawer" aria-hidden="true">
+  <div class="scrim" data-close></div>
+  <aside class="drawer" role="dialog" aria-modal="true" aria-label="รายละเอียดงาน">
+    <header class="d-head">
+      <span id="dType"></span><span id="dWhere"></span><span class="spacer"></span>
+      <button class="icon" data-close title="ปิด (Esc)" aria-label="ปิด">✕</button>
+    </header>
+    <div class="d-body">
+      <textarea class="d-title" id="dTitle" rows="1" aria-label="ชื่องาน"></textarea>
+      <dl class="d-props">
+        <dt>สถานะในบอร์ด</dt><dd><select id="dStatus" aria-label="สถานะ"></select></dd>
+        <dt>Label</dt><dd id="dLabels"></dd>
+        <dt>ผู้รับผิดชอบ</dt><dd id="dPeople"></dd>
+        <dt>ประเภท</dt><dd id="dState"></dd>
+      </dl>
+      <section class="d-sec">
+        <h4>รายละเอียด
+          <span class="tabs"><button type="button" data-tab="preview">ดู</button><button type="button" data-tab="edit">แก้ไข</button></span>
+        </h4>
+        <div class="md" id="dPreview"></div>
+        <textarea class="md-edit" id="dEdit" placeholder="เขียนแบบ Markdown ได้ เช่น&#10;## งานย่อย&#10;- [ ] ทำเสียงหิน&#10;- [x] ทำเสียงไม้"></textarea>
+        <div class="hint" id="dHint">ติ๊ก checklist ในโหมด "ดู" ได้เลย · Ctrl/⌘ + S เพื่อบันทึก</div>
+      </section>
+    </div>
+    <footer class="d-foot">
+      <a class="btn ghost" id="dGh" target="_blank" rel="noopener">เปิดใน GitHub ↗</a>
+      <span class="spacer"></span>
+      <button type="button" class="btn" data-close>ปิด</button>
+      <button type="button" class="btn primary" id="dSave" disabled>บันทึก</button>
+    </footer>
+  </aside>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const COLORS = {GRAY:'#8b93a7',BLUE:'#5b8def',GREEN:'#4cc38a',YELLOW:'#e6c04a',ORANGE:'#f0904a',RED:'#ef6461',PINK:'#e879b9',PURPLE:'#a17cf0'};
+const ICONS = {
+  ISSUE:'<svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="8" cy="8" r="1.6" fill="currentColor"/></svg>',
+  PULL_REQUEST:'<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="4" cy="3.5" r="1.8"/><circle cx="4" cy="12.5" r="1.8"/><circle cx="12" cy="12.5" r="1.8"/><path d="M4 5.3v5.4M12 10.7V6a2 2 0 0 0-2-2H7.5M9 2.5 7.5 4 9 5.5"/></svg>',
+  DRAFT_ISSUE:'<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M11 2.5l2.5 2.5L6 12.5H3.5V10z"/></svg>'
+};
+const store = {
+  get(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } },
+  set(k,v){ try{ v==null ? localStorage.removeItem(k) : localStorage.setItem(k,v); }catch(e){} }
+};
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+let cfg = {ownerType:'user', login:'', number:'', token:''};
+let S = {mode:'demo', project:null, field:null, items:[], filter:''};
+
+/* ---------- Demo data ---------- */
+function demoData(){
+  const opt = (id,name,color)=>({id,name,color});
+  const L = (name,color)=>({name,color});
+  const A = l=>({login:l,avatarUrl:''});
+  let n = 0;
+  const it = (status,title,extra={}) => ({id:'d'+(++n),status,title,type:'ISSUE',repo:'owlhoursspace/RoomToBloom',number:40+n,url:'',state:'OPEN',body:'',labels:[],assignees:[A('nares')],...extra});
+  return {
+    project:{id:'demo',title:'Room to Bloom — Roadmap'},
+    field:{id:'f',options:[opt('todo','Backlog','GRAY'),opt('ready','Todo','BLUE'),opt('doing','In Progress','YELLOW'),opt('review','Review','PURPLE'),opt('done','Done','GREEN')]},
+    items:[
+      it('todo','ระบบ save/load ห้องลง cloud',{body:'ให้ผู้เล่นเล่นต่อข้ามเครื่องได้\n\n## งานย่อย\n- [ ] เลือกบริการ (Unity Cloud Save / Steam Cloud)\n- [ ] serialize ห้องเป็น JSON\n- [ ] จัดการ conflict เมื่อเล่นสองเครื่อง',labels:[L('feature','5b8def'),L('backend','8b93a7')]}),
+      it('todo','ไอเดีย: ต้นไม้โตตามเวลาจริง',{type:'DRAFT_ISSUE',repo:'',number:null,labels:[L('idea','e879b9')],assignees:[]}),
+      it('ready','เสียงวางบล็อกแต่ละวัสดุ (ไม้ / หิน / ผ้า)',{body:'โทนนุ่มๆ ไม่แหลม เข้ากับบรรยากาศ cozy\n\n- [x] ไม้\n- [ ] หิน\n- [ ] ผ้า\n- [ ] สุ่ม pitch ±5% กันเสียงซ้ำ',labels:[L('audio','f0904a')]}),
+      it('ready','UI Blur สำหรับเมนู pause',{repo:'owlhoursspace/UIBlurPro',labels:[L('shader','a17cf0'),L('UI','5b8def')]}),
+      it('doing','Snap grid เมื่อหมุนบล็อก 45°',{body:'หมุนบล็อก 45° แล้วตำแหน่ง snap **เพี้ยนไปครึ่งช่อง**\n\n### ขั้นตอนทำซ้ำ\n- วางบล็อกไม้ 2x1\n- กด `R` หมุน 45°\n- ลากไปชิดผนัง\n\n### งานย่อย\n- [x] หาสาเหตุใน `GridSnapper.cs`\n- [ ] ปัด pivot ให้อยู่กลางช่อง\n- [ ] เขียน test หมุน 8 ทิศ',labels:[L('gameplay','4cc38a'),L('bug','ef6461')]}),
+      it('doing','Ambient loop กลางคืน + เสียงจิ้งหรีด',{labels:[L('audio','f0904a')]}),
+      it('review','ปรับ lighting URP ให้ warm ขึ้น',{type:'PULL_REQUEST',labels:[L('art','e6c04a')]}),
+      it('done','หน้า Steam: capsule art v2',{state:'CLOSED',labels:[L('marketing','e879b9')]}),
+      it('done','Undo / Redo การวางบล็อก',{state:'CLOSED',labels:[L('feature','5b8def')]})
+    ]
+  };
+}
+
+/* ---------- GitHub API ---------- */
+async function gql(query, variables){
+  const res = await fetch('https://api.github.com/graphql',{
+    method:'POST',
+    headers:{'Authorization':'Bearer '+cfg.token,'Content-Type':'application/json'},
+    body:JSON.stringify({query,variables})
+  });
+  if(res.status===401) throw new Error('Token ไม่ถูกต้องหรือหมดอายุ');
+  const json = await res.json();
+  if(json.errors?.length) throw new Error(json.errors[0].message);
+  return json.data;
+}
+
+const CONTENT = `labels(first:6){nodes{name color}} assignees(first:3){nodes{login avatarUrl}}`;
+const qProject = owner => `query($login:String!,$number:Int!,$cursor:String){
+  owner:${owner}(login:$login){ projectV2(number:$number){ id title
+    field(name:"Status"){ ... on ProjectV2SingleSelectField{ id options{ id name color } } }
+    items(first:100, after:$cursor){ pageInfo{ hasNextPage endCursor }
+      nodes{ id type isArchived
+        fieldValueByName(name:"Status"){ ... on ProjectV2ItemFieldSingleSelectValue{ optionId } }
+        content{
+          ... on Issue{ id title body number url state repository{ nameWithOwner } ${CONTENT} }
+          ... on PullRequest{ id title body number url state repository{ nameWithOwner } ${CONTENT} }
+          ... on DraftIssue{ id title body assignees(first:3){nodes{login avatarUrl}} }
+        } } } } } }`;
+
+async function loadLive(){
+  let cursor = null, items = [], project = null, field = null;
+  for(let page=0; page<10; page++){
+    const d = await gql(qProject(cfg.ownerType), {login:cfg.login, number:Number(cfg.number), cursor});
+    const p = d.owner?.projectV2;
+    if(!p) throw new Error('ไม่พบ Project นี้ — เช็กชื่อผู้ใช้และเลข project');
+    project = {id:p.id, title:p.title};
+    field = p.field;
+    if(!field?.options) throw new Error('Project นี้ไม่มีฟิลด์ "Status" แบบ single select');
+    for(const n of p.items.nodes){
+      if(n.isArchived || !n.content) continue;
+      const c = n.content;
+      items.push({
+        id:n.id, contentId:c.id, body:c.body || '', type:n.type, status:n.fieldValueByName?.optionId || null,
+        title:c.title, number:c.number ?? null, url:c.url || '', state:c.state || 'OPEN',
+        repo:c.repository?.nameWithOwner || '',
+        labels:c.labels?.nodes || [], assignees:c.assignees?.nodes || []
+      });
+    }
+    if(!p.items.pageInfo.hasNextPage) break;
+    cursor = p.items.pageInfo.endCursor;
+  }
+  return {project, field, items};
+}
+
+const mSetStatus = `mutation($p:ID!,$i:ID!,$f:ID!,$o:String!){
+  updateProjectV2ItemFieldValue(input:{projectId:$p,itemId:$i,fieldId:$f,value:{singleSelectOptionId:$o}}){ projectV2Item{ id } } }`;
+const mClearStatus = `mutation($p:ID!,$i:ID!,$f:ID!){
+  clearProjectV2ItemFieldValue(input:{projectId:$p,itemId:$i,fieldId:$f}){ projectV2Item{ id } } }`;
+const mAddDraft = `mutation($p:ID!,$t:String!){
+  addProjectV2DraftIssue(input:{projectId:$p,title:$t}){ projectItem{ id content{ ... on DraftIssue{ id } } } } }`;
+const mUpdate = {
+  ISSUE:`mutation($id:ID!,$t:String!,$b:String!){ updateIssue(input:{id:$id,title:$t,body:$b}){ issue{ id } } }`,
+  PULL_REQUEST:`mutation($id:ID!,$t:String!,$b:String!){ updatePullRequest(input:{pullRequestId:$id,title:$t,body:$b}){ pullRequest{ id } } }`,
+  DRAFT_ISSUE:`mutation($id:ID!,$t:String!,$b:String!){ updateProjectV2DraftIssue(input:{draftIssueId:$id,title:$t,body:$b}){ draftIssue{ id } } }`
+};
+
+/* ---------- Actions ---------- */
+async function moveItem(id, statusId){
+  const item = S.items.find(i=>i.id===id);
+  if(!item || (item.status||null)===statusId) return;
+  const prev = item.status;
+  item.status = statusId; render();
+  if(S.mode!=='live') return toast('ย้ายแล้ว (โหมดตัวอย่าง)');
+  try{
+    if(statusId) await gql(mSetStatus,{p:S.project.id,i:id,f:S.field.id,o:statusId});
+    else await gql(mClearStatus,{p:S.project.id,i:id,f:S.field.id});
+    toast('อัปเดต GitHub แล้ว');
+  }catch(e){ item.status = prev; render(); toast(e.message,true); }
+}
+
+async function addCard(statusId, title){
+  title = title.trim(); if(!title) return;
+  if(S.mode!=='live'){
+    S.items.push({id:'d'+Date.now(),status:statusId,title,body:'',type:'DRAFT_ISSUE',repo:'',number:null,url:'',state:'OPEN',labels:[],assignees:[]});
+    render(); return toast('เพิ่มการ์ดแล้ว (โหมดตัวอย่าง)');
+  }
+  try{
+    const d = await gql(mAddDraft,{p:S.project.id,t:title});
+    const id = d.addProjectV2DraftIssue.projectItem.id, contentId = d.addProjectV2DraftIssue.projectItem.content?.id;
+    if(statusId) await gql(mSetStatus,{p:S.project.id,i:id,f:S.field.id,o:statusId});
+    S.items.push({id,contentId,body:'',status:statusId,title,type:'DRAFT_ISSUE',repo:'',number:null,url:'',state:'OPEN',labels:[],assignees:[]});
+    render(); toast('เพิ่ม draft ใน GitHub แล้ว');
+  }catch(e){ toast(e.message,true); }
+}
+
+/* ---------- Render ---------- */
+function columns(){
+  const cols = S.field.options.map(o=>({id:o.id,name:o.name,color:COLORS[o.color]||COLORS.GRAY}));
+  if(S.items.some(i=>!i.status)) cols.unshift({id:null,name:'ไม่มีสถานะ',color:COLORS.GRAY});
+  return cols;
+}
+
+function cardEl(i){
+  const el = document.createElement('article');
+  el.className = 'card'; el.draggable = true; el.dataset.id = i.id; el.tabIndex = 0;
+  const closed = i.state==='CLOSED' || i.state==='MERGED';
+  const where = i.repo ? `${esc(i.repo.split('/')[1])}${i.number ? ' #'+i.number : ''}` : 'Draft';
+  const title = esc(i.title);
+  const tasks = (i.body||'').match(/^\s*[-*+]\s+\[[ xX]\]/gm) || [], doneT = tasks.filter(t=>/\[[xX]\]/.test(t)).length;
+  const progress = tasks.length ? `<span class="prog" title="checklist">☑ ${doneT}/${tasks.length}</span>` : '';
+  const labels = i.labels.length ? `<div class="labels">${i.labels.map(labelHTML).join('')}</div>` : '';
+  const avatars = (i.assignees.length || progress) ? `<div class="foot">${progress}<div class="avatars">${i.assignees.map(a=>
+      a.avatarUrl ? `<img src="${esc(a.avatarUrl)}" alt="${esc(a.login)}" title="${esc(a.login)}">`
+                  : `<span title="${esc(a.login)}">${esc(a.login[0]?.toUpperCase())}</span>`).join('')}</div></div>` : '';
+  el.innerHTML = `<div class="meta"><span class="type ${i.type==='DRAFT_ISSUE'?'draft':closed?'closed':''}">${ICONS[i.type]||ICONS.ISSUE}</span><span>${where}</span>
+    <button class="icon more" title="ย้ายไป…" aria-label="ย้ายการ์ด">⋯</button></div><h3>${title}</h3>${labels}${avatars}`;
+  el.addEventListener('dragstart', e=>{ e.dataTransfer.setData('text/plain', i.id); e.dataTransfer.effectAllowed='move'; el.classList.add('dragging'); });
+  el.addEventListener('dragend', ()=> el.classList.remove('dragging'));
+  el.querySelector('.more').addEventListener('click', e=>{ e.stopPropagation(); openMenu(e.currentTarget, i); });
+  el.addEventListener('click', e=>{ if(!e.target.closest('.more')) openDrawer(i.id); });
+  el.addEventListener('keydown', e=>{ if(e.key==='Enter' && e.target===el) openDrawer(i.id); });
+  return el;
+}
+
+function render(){
+  $('#title').textContent = S.project.title;
+  $('#sub').textContent = S.mode==='live' ? `${cfg.login} · project #${cfg.number}` : 'ลองลากการ์ดดูได้เลย';
+  const mode = $('#mode');
+  mode.textContent = S.mode==='live' ? 'เชื่อมต่อ GitHub' : 'โหมดตัวอย่าง';
+  mode.classList.toggle('live', S.mode==='live');
+
+  const f = S.filter.toLowerCase();
+  const match = i => !f || [i.title, i.repo, ...i.labels.map(l=>l.name), ...i.assignees.map(a=>a.login)].join(' ').toLowerCase().includes(f);
+  const board = $('#board'); board.innerHTML = '';
+
+  for(const c of columns()){
+    const items = S.items.filter(i => (i.status||null)===c.id && match(i));
+    const col = document.createElement('section'); col.className = 'col';
+    col.innerHTML = `<header class="col-h"><span class="dot" style="background:${c.color};color:${c.color}"></span><h2>${esc(c.name)}</h2>
+      <span class="count">${items.length}</span>${c.id ? '<button class="icon add" title="เพิ่มการ์ด">+</button>' : ''}</header>
+      <div class="list"></div>
+      <form class="add-form" hidden><textarea rows="2" placeholder="ชื่องาน… (Enter เพื่อเพิ่ม)"></textarea>
+      <div class="row"><button class="btn primary" type="submit">เพิ่ม</button><button class="btn ghost cancel" type="button">ยกเลิก</button></div></form>`;
+    const list = col.querySelector('.list');
+    items.length ? items.forEach(i=>list.appendChild(cardEl(i)))
+                 : list.innerHTML = `<div class="empty">${f ? 'ไม่พบงานที่ค้นหา' : 'ลากการ์ดมาวางที่นี่'}</div>`;
+
+    col.addEventListener('dragover', e=>{ e.preventDefault(); col.classList.add('over'); });
+    col.addEventListener('dragleave', e=>{ if(!col.contains(e.relatedTarget)) col.classList.remove('over'); });
+    col.addEventListener('drop', e=>{ e.preventDefault(); col.classList.remove('over'); moveItem(e.dataTransfer.getData('text/plain'), c.id); });
+
+    const form = col.querySelector('.add-form'), ta = form.querySelector('textarea');
+    col.querySelector('.add')?.addEventListener('click', ()=>{ form.hidden = false; ta.focus(); });
+    form.querySelector('.cancel').addEventListener('click', ()=>{ form.hidden = true; ta.value=''; });
+    form.addEventListener('submit', e=>{ e.preventDefault(); addCard(c.id, ta.value); });
+    ta.addEventListener('keydown', e=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); addCard(c.id, ta.value); }
+                                        if(e.key==='Escape'){ form.hidden = true; } });
+    board.appendChild(col);
+  }
+  if(D){ const it = S.items.find(x=>x.id===D.id); if(it) $('#dStatus').value = it.status || ''; }
+}
+
+/* ---------- Move menu (works on touch) ---------- */
+let menuEl = null;
+function closeMenu(){ menuEl?.remove(); menuEl = null; }
+function openMenu(btn, item){
+  closeMenu();
+  menuEl = document.createElement('div'); menuEl.className = 'menu';
+  menuEl.innerHTML = '<p>ย้ายไปที่</p>' + columns().filter(c=>c.id).map(c=>
+    `<button data-id="${c.id}" ${item.status===c.id?'disabled':''}><span class="dot" style="background:${c.color};color:${c.color}"></span>${esc(c.name)}</button>`).join('');
+  document.body.appendChild(menuEl);
+  const r = btn.getBoundingClientRect(), w = menuEl.offsetWidth, h = menuEl.offsetHeight;
+  menuEl.style.left = Math.max(8, Math.min(r.right - w, innerWidth - w - 8)) + 'px';
+  menuEl.style.top = (r.bottom + h + 8 > innerHeight ? r.top - h - 6 : r.bottom + 6) + 'px';
+  menuEl.addEventListener('click', e=>{ const b = e.target.closest('button[data-id]'); if(b && !b.disabled){ closeMenu(); moveItem(item.id, b.dataset.id); } });
+}
+document.addEventListener('click', e=>{ if(menuEl && !menuEl.contains(e.target)) closeMenu(); });
+addEventListener('scroll', closeMenu, true);
+
+/* ---------- Card detail drawer ---------- */
+function labelHTML(l){ const c='#'+(l.color||'8b93a7'); return `<span class="label" style="color:${c};border-color:${c}55;background:${c}1f">${esc(l.name)}</span>`; }
+function personHTML(a){ return `<span class="person">${a.avatarUrl ? `<img src="${esc(a.avatarUrl)}" alt="">` : `<span class="av">${esc(a.login[0]?.toUpperCase())}</span>`}${esc(a.login)}</span>`; }
+
+const TASK_RE = /^(\s*[-*+]\s+)\[([ xX])\]\s?(.*)$/;
+function mdInline(t){
+  return esc(t)
+    .replace(/`([^`]+)`/g,'<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>')
+    .replace(/(^|[^*\w])\*([^*\s][^*]*)\*/g,'$1<i>$2</i>')
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>');
+}
+function mdRender(src){
+  if(!src.trim()) return '<p class="ph">ยังไม่มีรายละเอียด — กด "แก้ไข" เพื่อเขียน</p>';
+  let html='', list=false, code=null, para=[], task=0;
+  const flushP = ()=>{ if(para.length){ html += `<p>${para.map(mdInline).join('<br>')}</p>`; para=[]; } };
+  const closeL = ()=>{ if(list){ html += '</ul>'; list=false; } };
+  for(const line of src.replace(/\r/g,'').split('\n')){
+    if(code!==null){ if(/^```/.test(line)){ html += `<pre><code>${esc(code.join('\n'))}</code></pre>`; code=null; } else code.push(line); continue; }
+    if(/^```/.test(line)){ flushP(); closeL(); code=[]; continue; }
+    const h = line.match(/^(#{1,3})\s+(.*)/), t = line.match(TASK_RE), li = line.match(/^\s*[-*+]\s+(.*)/);
+    if(h){ flushP(); closeL(); const n = h[1].length+2; html += `<h${n}>${mdInline(h[2])}</h${n}>`; }
+    else if(t || li){
+      flushP(); if(!list){ html += '<ul>'; list=true; }
+      html += t ? `<li class="task"><label><input type="checkbox" data-task="${task++}" ${t[2]!==' '?'checked':''}><span>${mdInline(t[3])}</span></label></li>`
+                : `<li>${mdInline(li[1])}</li>`;
+    }
+    else if(!line.trim()){ flushP(); closeL(); }
+    else { closeL(); para.push(line); }
+  }
+  if(code!==null) html += `<pre><code>${esc(code.join('\n'))}</code></pre>`;
+  flushP(); closeL(); return html;
+}
+function toggleTask(src, n){
+  let k=0, inCode=false;
+  return src.replace(/\r/g,'').split('\n').map(line=>{
+    if(/^```/.test(line)){ inCode=!inCode; return line; }
+    if(inCode) return line;
+    const m = line.match(TASK_RE);
+    if(!m || k++!==n) return line;
+    return line.replace(/\[([ xX])\]/, m[2]===' ' ? '[x]' : '[ ]');
+  }).join('\n');
+}
+
+let D = null, closeArmed = false;
+const drawer = $('#drawer');
+const curItem = ()=> D && S.items.find(x=>x.id===D.id);
+const isDirty = ()=>{ const i = curItem(); return !!(i && (D.title.trim()!==i.title || D.body!==(i.body||''))); };
+function grow(t){ t.style.height='auto'; t.style.height = t.scrollHeight+'px'; }
+function updateSave(){
+  const b = $('#dSave'); b.disabled = !isDirty() || D.saving;
+  b.textContent = D.saving ? 'กำลังบันทึก…' : 'บันทึก'; closeArmed = false;
+}
+function setTab(tab){
+  D.tab = tab;
+  drawer.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on', b.dataset.tab===tab));
+  $('#dPreview').hidden = tab!=='preview'; $('#dEdit').hidden = tab!=='edit';
+  if(tab==='preview') $('#dPreview').innerHTML = mdRender(D.body); else $('#dEdit').focus();
+}
+function openDrawer(id){
+  const i = S.items.find(x=>x.id===id); if(!i) return;
+  if(D && D.id!==id && isDirty()) return toast('บันทึกหรือทิ้งการแก้ไขของการ์ดเดิมก่อนนะครับ', true);
+  closeMenu();
+  D = {id, title:i.title, body:i.body||'', tab:'preview', saving:false, last:D?.last || document.activeElement};
+  const closed = i.state==='CLOSED' || i.state==='MERGED';
+  $('#dType').innerHTML = `<span class="type ${i.type==='DRAFT_ISSUE'?'draft':closed?'closed':''}">${ICONS[i.type]||ICONS.ISSUE}</span>`;
+  $('#dWhere').textContent = i.repo ? `${i.repo}${i.number ? ' #'+i.number : ''}` : 'Draft issue';
+  $('#dStatus').innerHTML = columns().map(c=>`<option value="${c.id ?? ''}">${esc(c.name)}</option>`).join('');
+  $('#dStatus').value = i.status || '';
+  $('#dLabels').innerHTML = i.labels.length ? i.labels.map(labelHTML).join('') : '<span class="none">—</span>';
+  $('#dPeople').innerHTML = i.assignees.length ? i.assignees.map(personHTML).join('') : '<span class="none">ยังไม่มี</span>';
+  $('#dState').innerHTML = i.type==='DRAFT_ISSUE' ? '<span class="none">Draft (ยังไม่เป็น issue)</span>'
+    : `<span class="st ${closed?'closed':'open'}">${i.type==='PULL_REQUEST'?'PR · ':'Issue · '}${i.state==='MERGED'?'Merged':closed?'Closed':'Open'}</span>`;
+  const gh = $('#dGh'); gh.hidden = !i.url; if(i.url) gh.href = i.url;
+  $('#dEdit').value = D.body;
+  drawer.classList.add('open'); drawer.setAttribute('aria-hidden','false');
+  const t = $('#dTitle'); t.value = D.title; grow(t);
+  setTab('preview'); updateSave();
+  drawer.querySelector('.d-head [data-close]').focus({preventScroll:true});
+}
+function closeDrawer(force=false){
+  if(!D) return;
+  if(!force && isDirty() && !closeArmed){ closeArmed = true; return toast('ยังไม่ได้บันทึก — กดปิดอีกครั้งเพื่อทิ้งการแก้ไข', true); }
+  drawer.classList.remove('open'); drawer.setAttribute('aria-hidden','true');
+  const last = D.last; D = null; closeArmed = false;
+  if(last && document.contains(last)) last.focus({preventScroll:true});
+}
+async function saveDrawer(){
+  const i = curItem(); if(!i || !isDirty() || D.saving) return;
+  const title = D.title.trim(), body = D.body;
+  if(!title) return toast('ชื่องานว่างไม่ได้นะครับ', true);
+  if(S.mode==='live'){
+    if(!i.contentId || !mUpdate[i.type]) return toast('แก้ไขรายการประเภทนี้ไม่ได้', true);
+    D.saving = true; updateSave();
+    try{ await gql(mUpdate[i.type], {id:i.contentId, t:title, b:body}); }
+    catch(e){ if(D){ D.saving = false; updateSave(); } return toast(e.message, true); }
+  }
+  Object.assign(i, {title, body});
+  if(D && D.id===i.id){ D.saving = false; D.title = title; updateSave(); }
+  render();
+  toast(S.mode==='live' ? 'บันทึกลง GitHub แล้ว' : 'บันทึกแล้ว (โหมดตัวอย่าง)');
+}
+drawer.addEventListener('click', e=>{
+  if(e.target.closest('[data-close]')) return closeDrawer();
+  const tb = e.target.closest('.tabs button'); if(tb) setTab(tb.dataset.tab);
+});
+$('#dTitle').addEventListener('input', e=>{ D.title = e.target.value.replace(/\s*\n\s*/g,' '); grow(e.target); updateSave(); });
+$('#dTitle').addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); e.target.blur(); } });
+$('#dEdit').addEventListener('input', e=>{ D.body = e.target.value; updateSave(); });
+$('#dPreview').addEventListener('change', e=>{
+  const n = e.target.dataset.task; if(n==null) return;
+  D.body = toggleTask(D.body, Number(n)); $('#dEdit').value = D.body; updateSave();
+});
+$('#dStatus').addEventListener('change', e=> moveItem(D.id, e.target.value || null));
+$('#dSave').addEventListener('click', saveDrawer);
+addEventListener('resize', ()=>{ if(D) grow($('#dTitle')); });
+
+/* ---------- UI plumbing ---------- */
+let toastTimer;
+function toast(msg, err=false){
+  const t = $('#toast'); t.textContent = msg; t.classList.toggle('err', err); t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(()=>t.classList.remove('show'), err ? 4500 : 2000);
+}
+
+function useDemo(){ Object.assign(S, demoData(), {mode:'demo'}); render(); }
+
+async function connect(){
+  const btn = $('#refresh'); btn.classList.add('spin');
+  try{ Object.assign(S, await loadLive(), {mode:'live'}); render(); toast(`โหลด ${S.items.length} งานแล้ว`); }
+  catch(e){ toast(e.message, true); if(!S.project) useDemo(); }
+  finally{ btn.classList.remove('spin'); }
+}
+
+function setTheme(t){ document.documentElement.dataset.theme = t; store.set('ohb.theme', t); }
+$('#theme').onclick = ()=> setTheme(document.documentElement.dataset.theme==='light' ? 'dark' : 'light');
+$('#q').oninput = e=>{ S.filter = e.target.value; render(); };
+$('#refresh').onclick = ()=> S.mode==='live' ? connect() : (useDemo(), toast('รีเซ็ตข้อมูลตัวอย่าง'));
+
+const dlg = $('#dlg');
+$('#settings').onclick = ()=>{
+  $('#fOwnerType').value = cfg.ownerType; $('#fLogin').value = cfg.login;
+  $('#fNumber').value = cfg.number; $('#fToken').value = cfg.token;
+  dlg.showModal();
+};
+$('#closeDlg').onclick = ()=> dlg.close();
+$('#useDemo').onclick = ()=>{ dlg.close(); useDemo(); };
+$('#cfgForm').addEventListener('submit', e=>{
+  e.preventDefault();
+  cfg = {ownerType:$('#fOwnerType').value, login:$('#fLogin').value.trim(), number:$('#fNumber').value.trim(), token:$('#fToken').value.trim()};
+  if(!cfg.login || !cfg.number || !cfg.token) return toast('กรอกข้อมูลให้ครบก่อนนะครับ', true);
+  store.set('ohb.cfg', JSON.stringify({ownerType:cfg.ownerType, login:cfg.login, number:cfg.number}));
+  store.set('ohb.token', $('#fRemember').checked ? cfg.token : null);
+  dlg.close(); connect();
+});
+document.addEventListener('keydown', e=>{
+  if(e.key==='Escape'){
+    if(menuEl) return closeMenu();
+    if(D && !dlg.open && !e.target.closest('.add-form')) return closeDrawer();
+  }
+  if(D && (e.metaKey || e.ctrlKey) && e.key.toLowerCase()==='s'){ e.preventDefault(); saveDrawer(); }
+});
+
+/* ---------- Boot ---------- */
+(function init(){
+  const saved = store.get('ohb.theme');
+  setTheme(saved || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'));
+  try{ Object.assign(cfg, JSON.parse(store.get('ohb.cfg') || '{}')); }catch(e){}
+  cfg.token = store.get('ohb.token') || '';
+  if(cfg.login && cfg.number && cfg.token){ useDemo(); connect(); } else useDemo();
+})();
+</script>
+</body>
+</html>
