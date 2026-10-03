@@ -416,7 +416,23 @@ async function moveItem(id, statusId){
     if(statusId) await gql(mSetStatus,{p:S.project.id,i:id,f:S.field.id,o:statusId});
     else await gql(mClearStatus,{p:S.project.id,i:id,f:S.field.id});
     toast('อัปเดต GitHub แล้ว');
-  }catch(e){ item.status = prev; render(); toast(e.message,true); }
+  }catch(e){ item.status = prev; render(); toast(e.message,true); return; }
+  watchState(item);
+}
+
+
+const qState = `query($id:ID!){ node(id:$id){ ... on Issue{ state } ... on PullRequest{ state } } }`;
+// Project workflows (such as auto-close on Done) run on GitHub a moment after the move,
+// so check back a few times instead of waiting for a manual refresh.
+async function watchState(i){
+  if(i.type==='DRAFT_ISSUE' || !i.contentId) return;
+  for(const wait of [1500, 3000, 6000]){
+    await new Promise(r=>setTimeout(r, wait));
+    let st;
+    // Best effort only: the move already succeeded, a failed check changes nothing.
+    try{ st = (await gql(qState, {id:i.contentId})).node?.state; }catch(e){ return; }
+    if(st && st!==i.state){ i.state = st; render(); if(curItem()===i) showState(i); return; }
+  }
 }
 
 async function addCard(statusId, title){
@@ -596,13 +612,18 @@ function setTab(tab){
   $('#dPreview').hidden = tab!=='preview'; $('#dEdit').hidden = tab!=='edit';
   if(tab==='preview') $('#dPreview').innerHTML = mdRender(D.body); else $('#dEdit').focus();
 }
+function showState(i){
+  const closed = i.state==='CLOSED' || i.state==='MERGED';
+  $('#dType').innerHTML = `<span class="type ${i.type==='DRAFT_ISSUE'?'draft':closed?'closed':''}">${ICONS[i.type]||ICONS.ISSUE}</span>`;
+  $('#dState').innerHTML = i.type==='DRAFT_ISSUE' ? '<span class="none">Draft (ยังไม่เป็น issue)</span>'
+    : `<span class="st ${closed?'closed':'open'}">${i.type==='PULL_REQUEST'?'PR · ':'Issue · '}${i.state==='MERGED'?'Merged':closed?'Closed':'Open'}</span>`;
+}
 function openDrawer(id){
   const i = S.items.find(x=>x.id===id); if(!i) return;
   if(D && D.id!==id && (isDirty() || hasUnsentComment())) return toast('บันทึกหรือทิ้งการแก้ไขของการ์ดเดิมก่อนนะครับ', true);
   closeMenu();
   D = {id, title:i.title, body:i.body||'', tab:'preview', saving:false, last:D?.last || document.activeElement};
-  const closed = i.state==='CLOSED' || i.state==='MERGED';
-  $('#dType').innerHTML = `<span class="type ${i.type==='DRAFT_ISSUE'?'draft':closed?'closed':''}">${ICONS[i.type]||ICONS.ISSUE}</span>`;
+  showState(i);
   $('#dWhere').textContent = i.repo ? `${i.repo}${i.number ? ' #'+i.number : ''}` : 'Draft issue';
   $('#dStatus').innerHTML = columns().map(c=>`<option value="${c.id ?? ''}">${esc(c.name)}</option>`).join('');
   $('#dStatus').value = i.status || '';
@@ -612,8 +633,6 @@ function openDrawer(id){
   $('#dLblEdit').hidden = S.mode!=='live' || i.type==='DRAFT_ISSUE';
   $('#dLblPick').hidden = true;
   $('#dPeople').innerHTML = i.assignees.length ? i.assignees.map(personHTML).join('') : '<span class="none">ยังไม่มี</span>';
-  $('#dState').innerHTML = i.type==='DRAFT_ISSUE' ? '<span class="none">Draft (ยังไม่เป็น issue)</span>'
-    : `<span class="st ${closed?'closed':'open'}">${i.type==='PULL_REQUEST'?'PR · ':'Issue · '}${i.state==='MERGED'?'Merged':closed?'Closed':'Open'}</span>`;
   const gh = $('#dGh'); gh.hidden = !i.url; if(i.url) gh.href = i.url;
   $('#dEdit').value = D.body;
   drawer.classList.add('open'); drawer.setAttribute('aria-hidden','false');
