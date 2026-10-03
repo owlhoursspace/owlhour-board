@@ -74,6 +74,9 @@ button,input,select,textarea{font:inherit;color:inherit}
 .foot{display:flex;align-items:center;margin-top:9px}
 .avatars{display:flex;margin-left:auto}
 .prog{font-size:12px;font-weight:700;color:var(--muted);background:var(--bg2);border-radius:99px;padding:1px 8px}
+.due{font-size:12px;font-weight:700;color:var(--muted);background:var(--bg2);border-radius:99px;padding:1px 8px;margin-right:6px}
+.due.soon{color:#e6a23c;background:#e6a23c22}
+.due.over{color:#ef6461;background:#ef646122}
 .avatars img,.avatars span{width:22px;height:22px;border-radius:50%;border:2px solid var(--card);margin-left:-6px;display:grid;place-items:center;font-size:10px;font-weight:800;background:var(--accent2);color:#fff;object-fit:cover}
 
 /* Add form */
@@ -248,6 +251,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;gap:6px}
       <textarea class="d-title" id="dTitle" rows="1" aria-label="ชื่องาน"></textarea>
       <dl class="d-props">
         <dt>สถานะในบอร์ด</dt><dd><select id="dStatus" aria-label="สถานะ"></select></dd>
+        <dt id="dDueT">กำหนดส่ง</dt><dd id="dDue"></dd>
         <dt>Label</dt><dd><span id="dLabels"></span><button type="button" class="link-btn" id="dLblEdit">แก้</button><div class="lbl-pick" id="dLblPick" hidden></div></dd>
         <dt>ผู้รับผิดชอบ</dt><dd id="dPeople"></dd>
         <dt>ประเภท</dt><dd id="dState"></dd>
@@ -298,9 +302,13 @@ const store = {
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 let cfg = {ownerType:'user', login:'', number:'', token:''};
-let S = {mode:'demo', project:null, field:null, items:[], filter:''};
+let S = {mode:'demo', project:null, field:null, dueField:null, items:[], filter:''};
 
 /* ---------- Demo data ---------- */
+// Local calendar date as YYYY-MM-DD, the format GitHub uses for date fields.
+const isoDay = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+const dayOffset = n => { const d = new Date(); d.setDate(d.getDate()+n); return isoDay(d); };
+
 function demoData(){
   const opt = (id,name,color)=>({id,name,color});
   const L = (name,color)=>({name,color});
@@ -310,15 +318,16 @@ function demoData(){
   return {
     project:{id:'demo',title:'Sample Project'},
     field:{id:'f',options:[opt('todo','Backlog','GRAY'),opt('ready','Todo','BLUE'),opt('doing','In Progress','YELLOW'),opt('review','Review','PURPLE'),opt('done','Done','GREEN')]},
+    dueField:'due',
     items:[
-      it('todo','Save settings between sessions',{body:'Sample card. Remember the user\'s choices after a restart.\n\n## Tasks\n- [ ] Pick a storage format\n- [ ] Load on startup\n- [ ] Handle a missing or corrupt file',labels:[L('feature','5b8def'),L('backend','8b93a7')]}),
+      it('todo','Save settings between sessions',{due:dayOffset(12),body:'Sample card. Remember the user\'s choices after a restart.\n\n## Tasks\n- [ ] Pick a storage format\n- [ ] Load on startup\n- [ ] Handle a missing or corrupt file',labels:[L('feature','5b8def'),L('backend','8b93a7')]}),
       it('todo','Idea: keyboard shortcuts',{type:'DRAFT_ISSUE',repo:'',number:null,labels:[L('idea','e879b9')],assignees:[]}),
-      it('ready','Sound for button clicks',{body:'Sample card.\n\n- [x] Primary button\n- [ ] Secondary button\n- [ ] Disabled state',labels:[L('audio','f0904a')]}),
+      it('ready','Sound for button clicks',{due:dayOffset(2),body:'Sample card.\n\n- [x] Primary button\n- [ ] Secondary button\n- [ ] Disabled state',labels:[L('audio','f0904a')]}),
       it('ready','Dark mode for the settings page',{labels:[L('UI','5b8def')]}),
-      it('doing','List jumps when an item is removed',{body:'Sample card. Removing an item **scrolls the list to the top**.\n\n### Steps to reproduce\n- Open a long list\n- Scroll halfway down\n- Remove any item\n\n### Tasks\n- [x] Find the cause\n- [ ] Keep the scroll position\n- [ ] Add a test',labels:[L('bug','ef6461')]}),
+      it('doing','List jumps when an item is removed',{due:dayOffset(-1),body:'Sample card. Removing an item **scrolls the list to the top**.\n\n### Steps to reproduce\n- Open a long list\n- Scroll halfway down\n- Remove any item\n\n### Tasks\n- [x] Find the cause\n- [ ] Keep the scroll position\n- [ ] Add a test',labels:[L('bug','ef6461')]}),
       it('doing','Loading spinner',{labels:[L('UI','5b8def')]}),
       it('review','Update colour palette',{type:'PULL_REQUEST',labels:[L('art','e6c04a')]}),
-      it('done','Write the README',{state:'CLOSED',labels:[L('docs','e879b9')]}),
+      it('done','Write the README',{due:dayOffset(-5),state:'CLOSED',labels:[L('docs','e879b9')]}),
       it('done','Undo / Redo',{state:'CLOSED',labels:[L('feature','5b8def')]})
     ]
   };
@@ -341,9 +350,11 @@ const CONTENT = `labels(first:6){nodes{name color}} assignees(first:3){nodes{log
 const qProject = owner => `query($login:String!,$number:Int!,$cursor:String){
   owner:${owner}(login:$login){ projectV2(number:$number){ id title
     field(name:"Status"){ ... on ProjectV2SingleSelectField{ id options{ id name color } } }
+    due:field(name:"Due"){ ... on ProjectV2Field{ id dataType } }
     items(first:100, after:$cursor){ pageInfo{ hasNextPage endCursor }
       nodes{ id type isArchived
         fieldValueByName(name:"Status"){ ... on ProjectV2ItemFieldSingleSelectValue{ optionId } }
+        dueValue:fieldValueByName(name:"Due"){ ... on ProjectV2ItemFieldDateValue{ date } }
         content{
           ... on Issue{ id title body number url state repository{ nameWithOwner } ${CONTENT} }
           ... on PullRequest{ id title body number url state repository{ nameWithOwner } ${CONTENT} }
@@ -351,7 +362,7 @@ const qProject = owner => `query($login:String!,$number:Int!,$cursor:String){
         } } } } } }`;
 
 async function loadLive(){
-  let cursor = null, items = [], project = null, field = null;
+  let cursor = null, items = [], project = null, field = null, dueField = null;
   for(let page=0; page<10; page++){
     const d = await gql(qProject(cfg.ownerType), {login:cfg.login, number:Number(cfg.number), cursor});
     const p = d.owner?.projectV2;
@@ -359,6 +370,8 @@ async function loadLive(){
     project = {id:p.id, title:p.title};
     field = p.field;
     if(!field?.options) throw new Error('Project นี้ไม่มีฟิลด์ "Status" แบบ single select');
+    // "Due" is optional; the board works without it.
+    dueField = p.due?.dataType==='DATE' ? p.due.id : null;
     for(const n of p.items.nodes){
       if(n.isArchived || !n.content) continue;
       const c = n.content;
@@ -366,13 +379,14 @@ async function loadLive(){
         id:n.id, contentId:c.id, body:c.body || '', type:n.type, status:n.fieldValueByName?.optionId || null,
         title:c.title, number:c.number ?? null, url:c.url || '', state:c.state || 'OPEN',
         repo:c.repository?.nameWithOwner || '',
-        labels:c.labels?.nodes || [], assignees:c.assignees?.nodes || []
+        labels:c.labels?.nodes || [], assignees:c.assignees?.nodes || [],
+        due:n.dueValue?.date || null
       });
     }
     if(!p.items.pageInfo.hasNextPage) break;
     cursor = p.items.pageInfo.endCursor;
   }
-  return {project, field, items};
+  return {project, field, dueField, items};
 }
 
 const mSetStatus = `mutation($p:ID!,$i:ID!,$f:ID!,$o:String!){
@@ -423,6 +437,24 @@ function columns(){
   return cols;
 }
 
+function dueParts(i){
+  if(!i.due) return null;
+  const closed = i.state==='CLOSED' || i.state==='MERGED';
+  // Both sides parse as UTC midnight, so the difference is a whole number of days.
+  const days = Math.round((Date.parse(i.due) - Date.parse(isoDay(new Date())))/864e5);
+  const d = new Date(i.due+'T00:00'), opts = {day:'numeric', month:'short'};
+  if(d.getFullYear()!==new Date().getFullYear()) opts.year = 'numeric';
+  return {
+    cls: closed ? '' : days<0 ? 'over' : days<=2 ? 'soon' : '',
+    text: d.toLocaleDateString('th-TH', opts),
+    hint: closed ? 'งานปิดแล้ว' : days<0 ? `เลยกำหนด ${-days} วัน` : days===0 ? 'ครบกำหนดวันนี้' : `อีก ${days} วัน`
+  };
+}
+function dueHTML(i){
+  const p = dueParts(i);
+  return p ? `<span class="due ${p.cls}" title="${p.hint}">📅 ${esc(p.text)}</span>` : '';
+}
+
 function cardEl(i){
   const el = document.createElement('article');
   el.className = 'card'; el.draggable = true; el.dataset.id = i.id; el.tabIndex = 0;
@@ -432,7 +464,8 @@ function cardEl(i){
   const tasks = (i.body||'').match(/^\s*[-*+]\s+\[[ xX]\]/gm) || [], doneT = tasks.filter(t=>/\[[xX]\]/.test(t)).length;
   const progress = tasks.length ? `<span class="prog" title="checklist">☑ ${doneT}/${tasks.length}</span>` : '';
   const labels = i.labels.length ? `<div class="labels">${i.labels.map(labelHTML).join('')}</div>` : '';
-  const avatars = (i.assignees.length || progress) ? `<div class="foot">${progress}<div class="avatars">${i.assignees.map(a=>
+  const due = dueHTML(i);
+  const avatars = (i.assignees.length || progress || due) ? `<div class="foot">${due}${progress}<div class="avatars">${i.assignees.map(a=>
       a.avatarUrl ? `<img src="${esc(a.avatarUrl)}" alt="${esc(a.login)}" title="${esc(a.login)}">`
                   : `<span title="${esc(a.login)}">${esc(a.login[0]?.toUpperCase())}</span>`).join('')}</div></div>` : '';
   el.innerHTML = `<div class="meta"><span class="type ${i.type==='DRAFT_ISSUE'?'draft':closed?'closed':''}">${ICONS[i.type]||ICONS.ISSUE}</span><span>${where}</span>
@@ -569,6 +602,9 @@ function openDrawer(id){
   $('#dWhere').textContent = i.repo ? `${i.repo}${i.number ? ' #'+i.number : ''}` : 'Draft issue';
   $('#dStatus').innerHTML = columns().map(c=>`<option value="${c.id ?? ''}">${esc(c.name)}</option>`).join('');
   $('#dStatus').value = i.status || '';
+  $('#dDueT').hidden = $('#dDue').hidden = !S.dueField;
+  const dp = dueParts(i);
+  $('#dDue').innerHTML = dp ? `${dueHTML(i)}<span class="none">${dp.hint}</span>` : '<span class="none">—</span>';
   showLabels(i);
   $('#dLblEdit').hidden = S.mode!=='live' || i.type==='DRAFT_ISSUE';
   $('#dLblPick').hidden = true;
