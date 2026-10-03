@@ -417,9 +417,20 @@ async function moveItem(id, statusId){
     else await gql(mClearStatus,{p:S.project.id,i:id,f:S.field.id});
     toast('อัปเดต GitHub แล้ว');
   }catch(e){ item.status = prev; render(); toast(e.message,true); return; }
+  if(item.type==='ISSUE' && item.state==='CLOSED' && isDone(prev) && !isDone(statusId)) return reopen(item);
   watchState(item);
 }
 
+// GitHub can close an issue when it reaches Done, but has no workflow for the way back.
+const DONE_COLUMN = 'done';
+const isDone = statusId => S.field.options.find(o=>o.id===statusId)?.name.trim().toLowerCase()===DONE_COLUMN;
+const mReopen = `mutation($id:ID!){ reopenIssue(input:{issueId:$id}){ issue{ state } } }`;
+async function reopen(i){
+  try{ i.state = (await gql(mReopen, {id:i.contentId})).reopenIssue.issue.state; }
+  catch(e){ return toast('ย้ายแล้ว แต่เปิด issue ใหม่ไม่ได้: '+e.message, true); }
+  render(); if(curItem()===i) showState(i);
+  toast('ย้ายแล้ว และเปิด issue ใหม่');
+}
 
 const qState = `query($id:ID!){ node(id:$id){ ... on Issue{ state } ... on PullRequest{ state } } }`;
 // Project workflows (such as auto-close on Done) run on GitHub a moment after the move,
