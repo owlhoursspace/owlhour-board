@@ -624,12 +624,26 @@ function labelHTML(l){ const c='#'+(l.color||'8b93a7'); return `<span class="lab
 function personHTML(a){ return `<span class="person">${a.avatarUrl ? `<img src="${esc(a.avatarUrl)}" alt="">` : `<span class="av">${esc(a.login[0]?.toUpperCase())}</span>`}${esc(a.login)}</span>`; }
 
 const TASK_RE = /^(\s*[-*+]\s+)\[([ xX])\]\s?(.*)$/;
+// Repo of the card being rendered, so a bare "#12" can point at an issue in it.
+let mdRepo = '';
+const extLink = (url, text)=> `<a href="${url}" target="_blank" rel="noopener">${text}</a>`;
 function mdInline(t){
+  // Finished links and code are parked as placeholders so later rules cannot rewrite inside them.
+  const kept = [], keep = html => '\u0001' + (kept.push(html)-1) + '\u0002';
   return esc(t)
-    .replace(/`([^`]+)`/g,'<code>$1</code>')
+    .replace(/`([^`]+)`/g, (_, c)=> keep(`<code>${c}</code>`))
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (_, text, url)=> keep(extLink(url, text)))
+    .replace(/https?:\/\/(?:(?!&quot;|&#39;|&gt;)[^\s<\u0001])+/g, m=>{
+      const tail = m.match(/[.,;:!?)\]]+$/)?.[0] || '', url = m.slice(0, m.length - tail.length);
+      return keep(extLink(url, url)) + tail;
+    })
+    .replace(/(^|[^\w/&#])(?:([\w.-]+\/[\w.-]+))?#(\d+)\b/g, (m, pre, repo, num)=>{
+      const r = repo || mdRepo; if(!r) return m;
+      return pre + keep(`<a href="https://github.com/${r}/issues/${num}" target="_blank" rel="noopener" data-ref="${r}#${num}">${repo || ''}#${num}</a>`);
+    })
     .replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>')
     .replace(/(^|[^*\w])\*([^*\s][^*]*)\*/g,'$1<i>$2</i>')
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>');
+    .replace(/\u0001(\d+)\u0002/g, (_, n)=> kept[n]);
 }
 // GitHub-style tables: a header row, then a separator row such as | --- | :---: |
 const TABLE_SEP_RE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
@@ -645,7 +659,8 @@ function mdTable(head, sep, rows){
   const tr = (cells, tag)=> '<tr>' + cols.map((_, n)=> cell(tag, cells[n], n)).join('') + '</tr>';
   return `<table><thead>${tr(cols,'th')}</thead><tbody>${rows.map(r=>tr(mdCells(r),'td')).join('')}</tbody></table>`;
 }
-function mdRender(src){
+function mdRender(src, repo=''){
+  mdRepo = repo;
   if(!src.trim()) return '<p class="ph">ยังไม่มีรายละเอียด — กด "แก้ไข" เพื่อเขียน</p>';
   let html='', list=false, code=null, para=[], task=0;
   const flushP = ()=>{ if(para.length){ html += `<p>${para.map(mdInline).join('<br>')}</p>`; para=[]; } };
@@ -698,7 +713,7 @@ function setTab(tab){
   D.tab = tab;
   drawer.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on', b.dataset.tab===tab));
   $('#dPreview').hidden = tab!=='preview'; $('#dEdit').hidden = tab!=='edit';
-  if(tab==='preview') $('#dPreview').innerHTML = mdRender(D.body); else $('#dEdit').focus();
+  if(tab==='preview') $('#dPreview').innerHTML = mdRender(D.body, curItem()?.repo); else $('#dEdit').focus();
 }
 function showState(i){
   const closed = i.state==='CLOSED' || i.state==='MERGED';
@@ -848,7 +863,7 @@ async function loadComments(i){
     const who = n.author || {login:'ghost', avatarUrl:''};
     const when = new Date(n.createdAt).toLocaleString('th-TH', {dateStyle:'medium', timeStyle:'short'});
     // Checkboxes in a comment are read-only here; toggling them would need a comment edit.
-    const body = n.body.trim() ? mdRender(n.body).replace(/<input type="checkbox"/g, '<input type="checkbox" disabled') : '<p class="ph">(ว่าง)</p>';
+    const body = n.body.trim() ? mdRender(n.body, i.repo).replace(/<input type="checkbox"/g, '<input type="checkbox" disabled') : '<p class="ph">(ว่าง)</p>';
     return `<article class="cmt"><header>${personHTML(who)}<time>${esc(when)}</time></header><div class="md">${body}</div></article>`;
   }).join('');
 }
@@ -876,6 +891,10 @@ async function saveDrawer(){
 }
 drawer.addEventListener('click', e=>{
   if(e.target.closest('[data-close]')) return closeDrawer();
+  // A #12 reference to a card that is on this board opens it here instead of on GitHub.
+  const ref = e.target.closest('a[data-ref]')?.dataset.ref;
+  const card = ref && S.items.find(x=> x.repo && `${x.repo}#${x.number}`===ref);
+  if(card){ e.preventDefault(); if(card.id!==D?.id) openDrawer(card.id); return; }
   const tb = e.target.closest('.tabs button'); if(tb) setTab(tb.dataset.tab);
 });
 $('#dTitle').addEventListener('input', e=>{ D.title = e.target.value.replace(/\s*\n\s*/g,' '); grow(e.target); updateSave(); });
