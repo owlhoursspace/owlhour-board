@@ -61,6 +61,11 @@ button,input,select,textarea{font:inherit;color:inherit}
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:11px 12px;cursor:grab;box-shadow:0 1px 0 rgba(0,0,0,.08);transition:transform .12s, box-shadow .12s, background .12s;position:relative}
 .card:hover{background:var(--card-h);box-shadow:var(--shadow);transform:translateY(-1px)}
 .card.dragging{opacity:.45;transform:rotate(1.5deg)}
+/* Negative margins cancel the line's height plus one list gap, so cards do not shift under the cursor. */
+.drop-line{height:4px;margin:-7px 0;border-radius:4px;background:var(--accent);flex:none;position:relative;z-index:1}
+/* At either end there is no gap to sit in; overlap the card instead of overflowing the scroll box. */
+.drop-line:first-child{margin:-2px 0 -12px}
+.drop-line:last-child{margin:-12px 0 -2px}
 .card .meta{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);font-weight:600}
 .card .meta .more{margin-left:auto;width:26px;height:26px;border-radius:8px;border:0;background:transparent;opacity:.6}
 .card:hover .meta .more,.card .meta .more:focus{opacity:1}
@@ -425,6 +430,48 @@ async function moveItem(id, statusId){
   watchState(item);
 }
 
+// Where a drop at height y lands: between the visible cards `after` and `before` (either may be null).
+function dropSlot(list, y){
+  const cards = [...list.querySelectorAll('.card:not(.dragging)')];
+  let at = cards.findIndex(el=>{ const r = el.getBoundingClientRect(); return y < r.top + r.height/2; });
+  if(at<0) at = cards.length;
+  return {after: cards[at-1]?.dataset.id || null, before: cards[at]?.dataset.id || null, node: cards[at] || null};
+}
+let dropLine = null;
+function showDropLine(list, y){
+  dropLine ??= Object.assign(document.createElement('div'), {className:'drop-line'});
+  const {node} = dropSlot(list, y);
+  if(node) list.insertBefore(dropLine, node); else list.appendChild(dropLine);
+}
+function clearDropLine(){ dropLine?.remove(); }
+
+const mPosition = `mutation($p:ID!,$i:ID!,$a:ID){
+  updateProjectV2ItemPosition(input:{projectId:$p,itemId:$i,afterId:$a}){ clientMutationId } }`;
+async function placeItem(id, statusId, after, before){
+  const item = S.items.find(x=>x.id===id); if(!item) return;
+  // GitHub keeps one order for the whole project, so a card's position is "right after item X"
+  // in that list, not a slot inside its column. afterId null means the very top.
+  const from = S.items.indexOf(item), oldPrev = S.items[from-1]?.id ?? null;
+  const pos = x => S.items.findIndex(i=>i.id===x);
+  const alreadyThere = (after===null || pos(after) < from) && (before===null || pos(before) > from);
+  if((item.status||null)===statusId && alreadyThere) return;
+  S.items.splice(from, 1);
+  const to = after ? S.items.findIndex(x=>x.id===after)+1
+           : before ? S.items.findIndex(x=>x.id===before)
+           : S.items.length;
+  S.items.splice(to, 0, item);
+  const newPrev = S.items[to-1]?.id ?? null, reordered = newPrev!==oldPrev;
+
+  if((item.status||null)!==statusId) moveItem(id, statusId); else if(reordered) render();
+  if(!reordered || S.mode!=='live') return;
+  try{ await gql(mPosition, {p:S.project.id, i:id, a:newPrev}); }
+  catch(e){
+    S.items.splice(S.items.indexOf(item), 1);
+    S.items.splice(oldPrev ? S.items.findIndex(x=>x.id===oldPrev)+1 : 0, 0, item);
+    render(); toast('จัดลำดับไม่สำเร็จ: '+e.message, true);
+  }
+}
+
 // GitHub can close an issue when it reaches Done, but has no workflow for the way back.
 const DONE_COLUMN = 'done';
 const isDone = statusId => S.field.options.find(o=>o.id===statusId)?.name.trim().toLowerCase()===DONE_COLUMN;
@@ -506,7 +553,7 @@ function cardEl(i){
   el.innerHTML = `<div class="meta"><span class="type ${i.type==='DRAFT_ISSUE'?'draft':closed?'closed':''}">${ICONS[i.type]||ICONS.ISSUE}</span><span>${where}</span>
     <button class="icon more" title="ย้ายไป…" aria-label="ย้ายการ์ด">⋯</button></div><h3>${title}</h3>${labels}${avatars}`;
   el.addEventListener('dragstart', e=>{ e.dataTransfer.setData('text/plain', i.id); e.dataTransfer.effectAllowed='move'; el.classList.add('dragging'); });
-  el.addEventListener('dragend', ()=> el.classList.remove('dragging'));
+  el.addEventListener('dragend', ()=>{ el.classList.remove('dragging'); clearDropLine(); });
   el.querySelector('.more').addEventListener('click', e=>{ e.stopPropagation(); openMenu(e.currentTarget, i); });
   el.addEventListener('click', e=>{ if(!e.target.closest('.more')) openDrawer(i.id); });
   el.addEventListener('keydown', e=>{ if(e.key==='Enter' && e.target===el) openDrawer(i.id); });
@@ -536,9 +583,13 @@ function render(){
     items.length ? items.forEach(i=>list.appendChild(cardEl(i)))
                  : list.innerHTML = `<div class="empty">${f ? 'ไม่พบงานที่ค้นหา' : 'ลากการ์ดมาวางที่นี่'}</div>`;
 
-    col.addEventListener('dragover', e=>{ e.preventDefault(); col.classList.add('over'); });
-    col.addEventListener('dragleave', e=>{ if(!col.contains(e.relatedTarget)) col.classList.remove('over'); });
-    col.addEventListener('drop', e=>{ e.preventDefault(); col.classList.remove('over'); moveItem(e.dataTransfer.getData('text/plain'), c.id); });
+    col.addEventListener('dragover', e=>{ e.preventDefault(); col.classList.add('over'); showDropLine(list, e.clientY); });
+    col.addEventListener('dragleave', e=>{ if(!col.contains(e.relatedTarget)){ col.classList.remove('over'); clearDropLine(); } });
+    col.addEventListener('drop', e=>{
+      e.preventDefault(); col.classList.remove('over');
+      const {after, before} = dropSlot(list, e.clientY); clearDropLine();
+      placeItem(e.dataTransfer.getData('text/plain'), c.id, after, before);
+    });
 
     const form = col.querySelector('.add-form'), ta = form.querySelector('textarea');
     col.querySelector('.add')?.addEventListener('click', ()=>{ form.hidden = false; ta.focus(); });
