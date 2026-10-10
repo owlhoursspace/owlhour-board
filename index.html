@@ -34,6 +34,15 @@ button,input,select,textarea{font:inherit;color:inherit}
 .brand svg{flex:none}
 .brand h1{margin:0;font-size:18px;font-weight:800;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .brand small{display:block;color:var(--muted);font-size:12px;font-weight:600}
+.proj-btn{border:0;background:none;padding:0;font:inherit;color:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:6px;max-width:100%}
+.proj-btn #title{overflow:hidden;text-overflow:ellipsis}
+.proj-btn .chev{font-size:12px;color:var(--muted)}
+.proj-btn:hover .chev{color:var(--accent)}
+.menu .proj-row{display:flex;gap:2px}
+.menu .proj-row .pick{flex-direction:column;align-items:flex-start;gap:0}
+.menu .proj-row small{color:var(--muted);font-size:11px;font-weight:600}
+.menu .proj-row .pick.on{color:var(--accent)}
+.menu .proj-row .x{width:auto;flex:none;color:var(--muted)}
 .pill{font-size:11px;font-weight:700;padding:3px 8px;border-radius:99px;background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--accent);white-space:nowrap}
 .pill.live{background:color-mix(in srgb,#4cc38a 18%,transparent);color:#4cc38a}
 .spacer{flex:1}
@@ -224,7 +233,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;gap:6px}
       <circle cx="25" cy="34" r="2.6" fill="var(--accent)"/><circle cx="41" cy="34" r="2.6" fill="var(--accent)"/>
       <path d="M29 42 L32 47 L35 42 Z" fill="var(--accent)"/>
     </svg>
-    <div><h1 id="title">OwlHour Board</h1><small id="sub">GitHub Projects</small></div>
+    <div><h1><button type="button" class="proj-btn" id="projBtn" title="สลับ Project"><span id="title">OwlHour Board</span><span class="chev">▾</span></button></h1><small id="sub">GitHub Projects</small></div>
   </div>
   <span id="mode" class="pill">โหมดตัวอย่าง</span>
   <div class="spacer"></div>
@@ -979,12 +988,66 @@ $('#q').oninput = e=>{ S.filter = e.target.value; render(); };
 $('#refresh').onclick = ()=> S.mode==='live' ? connect() : (useDemo(), toast('รีเซ็ตข้อมูลตัวอย่าง'));
 
 const dlg = $('#dlg');
-$('#settings').onclick = ()=>{
-  $('#fOwnerType').value = cfg.ownerType; $('#fLogin').value = cfg.login;
-  $('#fNumber').value = cfg.number; $('#fToken').value = '';
+function openSettings(p=cfg){
+  $('#fOwnerType').value = p.ownerType; $('#fLogin').value = p.login;
+  $('#fNumber').value = p.number; $('#fToken').value = '';
   updateTokenHint();
   dlg.showModal();
-};
+}
+$('#settings').onclick = ()=> openSettings();
+
+/* ---------- Project switcher ---------- */
+function openProjectMenu(btn){
+  closeMenu();
+  const activeKey = S.mode==='live' ? projectKey(cfg) : '';
+  menuEl = document.createElement('div'); menuEl.className = 'menu';
+  menuEl.innerHTML = '<p>Project</p>' + savedProjects.map(p=>{ const k = projectKey(p); return `
+    <div class="proj-row">
+      <button class="pick ${k===activeKey?'on':''}" data-key="${esc(k)}">${esc(p.title || 'Project #'+p.number)}<small>${esc(p.login)} · #${esc(p.number)}</small></button>
+      <button class="x" data-del="${esc(k)}" title="ลบออกจากรายการ (Project บน GitHub ไม่ถูกลบ)" aria-label="ลบออกจากรายการ">✕</button>
+    </div>`; }).join('') + '<button data-new>+ เชื่อมต่อ Project อื่น…</button>';
+  document.body.appendChild(menuEl);
+  const r = btn.getBoundingClientRect();
+  menuEl.style.left = Math.max(8, Math.min(r.left, innerWidth - menuEl.offsetWidth - 8)) + 'px';
+  menuEl.style.top = (r.bottom + 6) + 'px';
+  menuEl.addEventListener('click', e=>{
+    // Removing a row rebuilds the menu; without this the page-wide "click outside" handler
+    // would see the detached button and close the new menu at once.
+    e.stopPropagation();
+    const b = e.target.closest('button'); if(!b) return;
+    if(b.dataset.new!==undefined){ closeMenu(); return openSettings({ownerType:cfg.ownerType, login:cfg.login, number:''}); }
+    if(b.dataset.del){ forgetProject(b.dataset.del); return openProjectMenu(btn); }
+    if(b.dataset.key){ closeMenu(); switchProject(b.dataset.key); }
+  });
+}
+$('#projBtn').addEventListener('click', e=>{ e.stopPropagation(); menuEl ? closeMenu() : openProjectMenu(e.currentTarget); });
+
+async function switchProject(k){
+  const p = savedProjects.find(x=>projectKey(x)===k); if(!p) return;
+  if(S.mode==='live' && k===projectKey(cfg)) return;
+  if(D){
+    if(isDirty() || hasUnsentComment()) return toast('บันทึกหรือทิ้งการแก้ไขของการ์ดก่อนนะครับ', true);
+    closeDrawer(true);
+  }
+  const token = tokenFor(p.login);
+  if(!token) return openSettings(p);   // e.g. a token that was kept for the session only
+  const prev = cfg;
+  cfg = {ownerType:p.ownerType, login:p.login, number:p.number, token};
+  // A search typed for one project rarely means anything in another.
+  S.filter = ''; $('#q').value = '';
+  if(!(await connect()) && S.mode==='live') cfg = prev;
+}
+
+function forgetProject(k){
+  const p = savedProjects.find(x=>projectKey(x)===k); if(!p) return;
+  savedProjects = savedProjects.filter(x=>projectKey(x)!==k);
+  store.set('ohb.projects', JSON.stringify(savedProjects));
+  if(store.get('ohb.active')===k) store.set('ohb.active', null);
+  // Drop the token once no remembered project needs it, so no orphaned secret stays behind.
+  const login = p.login.toLowerCase();
+  if(!savedProjects.some(x=>x.login.toLowerCase()===login)){ delete savedTokens[login]; store.set('ohb.tokens', JSON.stringify(savedTokens)); }
+  toast('ลบออกจากรายการแล้ว');
+}
 // Leaving the token blank reuses the one already known for this account.
 function updateTokenHint(){
   const login = $('#fLogin').value.trim(), known = !!tokenFor(login);
