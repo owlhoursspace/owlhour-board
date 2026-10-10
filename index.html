@@ -321,7 +321,43 @@ const store = {
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 let cfg = {ownerType:'user', login:'', number:'', token:''};
-let S = {mode:'demo', project:null, field:null, dueField:null, items:[], filter:''};
+
+/* ---------- Saved projects ----------
+   Projects are remembered per project, tokens per account: one classic token
+   covers every project its account can see. */
+const readJSON = (k, fallback)=>{ try{ return JSON.parse(store.get(k)) ?? fallback; }catch(e){ return fallback; } };
+const projectKey = p => `${p.login.toLowerCase()}#${p.number}`;
+let savedProjects = readJSON('ohb.projects', []);
+let savedTokens = readJSON('ohb.tokens', {});
+const sessionTokens = {};   // tokens the user chose not to remember; gone on reload
+const tokenFor = login => sessionTokens[login.toLowerCase()] || savedTokens[login.toLowerCase()] || '';
+function rememberToken(login, token, remember){
+  const k = login.toLowerCase();
+  if(token) sessionTokens[k] = token;
+  if(remember && token) savedTokens[k] = token;
+  if(!remember) delete savedTokens[k];
+  store.set('ohb.tokens', JSON.stringify(savedTokens));
+}
+function rememberProject(p, title){
+  const entry = {ownerType:p.ownerType, login:p.login, number:String(p.number), title};
+  const k = projectKey(entry), at = savedProjects.findIndex(x=>projectKey(x)===k);
+  if(at<0) savedProjects.push(entry); else savedProjects[at] = entry;
+  store.set('ohb.projects', JSON.stringify(savedProjects));
+  store.set('ohb.active', k);
+}
+// One-time move from the old single-connection keys.
+(function migrate(){
+  const old = readJSON('ohb.cfg', null), oldToken = store.get('ohb.token');
+  if(!old?.login) return;
+  if(!savedProjects.some(x=>projectKey(x)===projectKey(old))) savedProjects.push({...old, number:String(old.number), title:''});
+  if(oldToken && !savedTokens[old.login.toLowerCase()]) savedTokens[old.login.toLowerCase()] = oldToken;
+  store.set('ohb.projects', JSON.stringify(savedProjects));
+  store.set('ohb.tokens', JSON.stringify(savedTokens));
+  if(!store.get('ohb.active')) store.set('ohb.active', projectKey(old));
+  store.set('ohb.cfg', null); store.set('ohb.token', null);
+})();
+
+let S ={mode:'demo', project:null, field:null, dueField:null, items:[], filter:''};
 
 /* ---------- Demo data ---------- */
 // Local calendar date as YYYY-MM-DD, the format GitHub uses for date fields.
@@ -931,8 +967,9 @@ function useDemo(){ Object.assign(S, demoData(), {mode:'demo'}); render(); }
 
 async function connect(){
   const btn = $('#refresh'); btn.classList.add('spin');
-  try{ Object.assign(S, await loadLive(), {mode:'live'}); render(); toast(`โหลด ${S.items.length} งานแล้ว`); }
-  catch(e){ toast(e.message, true); if(!S.project) useDemo(); }
+  // A project joins the saved list only after it loads, so a typo never gets remembered.
+  try{ Object.assign(S, await loadLive(), {mode:'live'}); rememberProject(cfg, S.project.title); render(); toast(`โหลด ${S.items.length} งานแล้ว`); return true; }
+  catch(e){ toast(e.message, true); if(!S.project) useDemo(); return false; }
   finally{ btn.classList.remove('spin'); }
 }
 
@@ -944,18 +981,30 @@ $('#refresh').onclick = ()=> S.mode==='live' ? connect() : (useDemo(), toast('�
 const dlg = $('#dlg');
 $('#settings').onclick = ()=>{
   $('#fOwnerType').value = cfg.ownerType; $('#fLogin').value = cfg.login;
-  $('#fNumber').value = cfg.number; $('#fToken').value = cfg.token;
+  $('#fNumber').value = cfg.number; $('#fToken').value = '';
+  updateTokenHint();
   dlg.showModal();
 };
+// Leaving the token blank reuses the one already known for this account.
+function updateTokenHint(){
+  const login = $('#fLogin').value.trim(), known = !!tokenFor(login);
+  $('#fToken').placeholder = known ? 'เว้นว่างได้ — ใช้ token ที่มีอยู่ของ account นี้' : 'ghp_…';
+  // Keep a session-only token session-only unless the user ticks the box again.
+  $('#fRemember').checked = known ? !!savedTokens[login.toLowerCase()] : true;
+}
+$('#fLogin').addEventListener('input', updateTokenHint);
 $('#closeDlg').onclick = ()=> dlg.close();
 $('#useDemo').onclick = ()=>{ dlg.close(); useDemo(); };
-$('#cfgForm').addEventListener('submit', e=>{
+$('#cfgForm').addEventListener('submit', async e=>{
   e.preventDefault();
-  cfg = {ownerType:$('#fOwnerType').value, login:$('#fLogin').value.trim(), number:$('#fNumber').value.trim(), token:$('#fToken').value.trim()};
-  if(!cfg.login || !cfg.number || !cfg.token) return toast('กรอกข้อมูลให้ครบก่อนนะครับ', true);
-  store.set('ohb.cfg', JSON.stringify({ownerType:cfg.ownerType, login:cfg.login, number:cfg.number}));
-  store.set('ohb.token', $('#fRemember').checked ? cfg.token : null);
-  dlg.close(); connect();
+  const login = $('#fLogin').value.trim(), typed = $('#fToken').value.trim();
+  const next = {ownerType:$('#fOwnerType').value, login, number:$('#fNumber').value.trim(), token:typed || tokenFor(login)};
+  if(!next.login || !next.number || !next.token) return toast('กรอกข้อมูลให้ครบก่อนนะครับ', true);
+  const prev = cfg; cfg = next;
+  rememberToken(login, cfg.token, $('#fRemember').checked);
+  dlg.close();
+  // If the new project fails to load, keep acting on the board that is still on screen.
+  if(!(await connect()) && S.mode==='live') cfg = prev;
 });
 document.addEventListener('keydown', e=>{
   if(e.key==='Escape'){
@@ -969,8 +1018,8 @@ document.addEventListener('keydown', e=>{
 (function init(){
   const saved = store.get('ohb.theme');
   setTheme(saved || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'));
-  try{ Object.assign(cfg, JSON.parse(store.get('ohb.cfg') || '{}')); }catch(e){}
-  cfg.token = store.get('ohb.token') || '';
+  const active = savedProjects.find(p=>projectKey(p)===store.get('ohb.active'));
+  if(active) cfg = {ownerType:active.ownerType, login:active.login, number:active.number, token:tokenFor(active.login)};
   if(cfg.login && cfg.number && cfg.token){ useDemo(); connect(); } else useDemo();
 })();
 </script>
