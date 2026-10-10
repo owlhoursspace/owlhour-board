@@ -368,12 +368,12 @@ async function gql(query, variables){
 const CONTENT = `labels(first:6){nodes{name color}} assignees(first:3){nodes{login avatarUrl}}`;
 const qProject = owner => `query($login:String!,$number:Int!,$cursor:String){
   owner:${owner}(login:$login){ projectV2(number:$number){ id title
-    field(name:"Status"){ ... on ProjectV2SingleSelectField{ id options{ id name color } } }
-    due:field(name:"Due"){ ... on ProjectV2Field{ id dataType } }
+    fields(first:50){ nodes{ ... on ProjectV2FieldCommon{ id name dataType } ... on ProjectV2SingleSelectField{ options{ id name color } } } }
     items(first:100, after:$cursor){ pageInfo{ hasNextPage endCursor }
       nodes{ id type isArchived
-        fieldValueByName(name:"Status"){ ... on ProjectV2ItemFieldSingleSelectValue{ optionId } }
-        dueValue:fieldValueByName(name:"Due"){ ... on ProjectV2ItemFieldDateValue{ date } }
+        fieldValues(first:50){ nodes{
+          ... on ProjectV2ItemFieldSingleSelectValue{ optionId field{ ... on ProjectV2FieldCommon{ id } } }
+          ... on ProjectV2ItemFieldDateValue{ date field{ ... on ProjectV2FieldCommon{ id } } } } }
         content{
           ... on Issue{ id title body number url state repository{ nameWithOwner } ${CONTENT} }
           ... on PullRequest{ id title body number url state repository{ nameWithOwner } ${CONTENT} }
@@ -387,19 +387,21 @@ async function loadLive(){
     const p = d.owner?.projectV2;
     if(!p) throw new Error('ไม่พบ Project นี้ — เช็กชื่อผู้ใช้และเลข project');
     project = {id:p.id, title:p.title};
-    field = p.field;
+    // Looked up from the field list: asking GitHub for a field by a name that does not
+    // exist fails the whole query, and "Due" is optional.
+    const byName = name => p.fields.nodes.find(f=>f.name===name);
+    field = byName('Status');
     if(!field?.options) throw new Error('Project นี้ไม่มีฟิลด์ "Status" แบบ single select');
-    // "Due" is optional; the board works without it.
-    dueField = p.due?.dataType==='DATE' ? p.due.id : null;
+    dueField = byName('Due')?.dataType==='DATE' ? byName('Due').id : null;
     for(const n of p.items.nodes){
       if(n.isArchived || !n.content) continue;
-      const c = n.content;
+      const c = n.content, val = id => n.fieldValues.nodes.find(v=>v.field?.id===id);
       items.push({
-        id:n.id, contentId:c.id, body:c.body || '', type:n.type, status:n.fieldValueByName?.optionId || null,
+        id:n.id, contentId:c.id, body:c.body || '', type:n.type, status:val(field.id)?.optionId || null,
         title:c.title, number:c.number ?? null, url:c.url || '', state:c.state || 'OPEN',
         repo:c.repository?.nameWithOwner || '',
         labels:c.labels?.nodes || [], assignees:c.assignees?.nodes || [],
-        due:n.dueValue?.date || null
+        due:(dueField && val(dueField)?.date) || null
       });
     }
     if(!p.items.pageInfo.hasNextPage) break;
