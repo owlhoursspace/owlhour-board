@@ -191,6 +191,9 @@ dialog::backdrop{background:rgba(5,8,20,.55);backdrop-filter:blur(3px)}
 .md pre{background:var(--bg2);border:1px solid var(--line);padding:10px 12px;border-radius:9px;overflow:auto}
 .md pre code{border:0;padding:0;background:none}
 .md a{color:var(--accent2)}
+.md a.img{display:block;margin:.5em 0;cursor:zoom-in}
+.md a.img img{display:block;max-width:100%;height:auto;border-radius:8px;border:1px solid var(--line)}
+.md .img-ph{display:inline-block;margin:.3em 0;padding:6px 10px;border:1px dashed var(--line);border-radius:8px;font-size:13px}
 .md table{display:block;max-width:100%;overflow-x:auto;border-collapse:collapse;margin:.6em 0;font-size:13px;line-height:1.5}
 .md th,.md td{border:1px solid var(--line);padding:5px 10px;text-align:left;vertical-align:top}
 .md th{background:var(--bg2);font-weight:800}
@@ -680,10 +683,42 @@ const TASK_RE = /^(\s*[-*+]\s+)\[([ xX])\]\s?(.*)$/;
 // Repo of the card being rendered, so a bare "#12" can point at an issue in it.
 let mdRepo = '';
 const extLink = (url, text)=> `<a href="${url}" target="_blank" rel="noopener">${text}</a>`;
+
+/* Images. Attachments in a private repo only load for a signed-in github.com visitor, so the
+   board asks GitHub for the rendered HTML, whose <img> sources carry short-lived signed URLs,
+   and swaps those in. mdImages is that list for the text being rendered. */
+let mdImages = null, mdImageAt = 0;
+const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+const isGitHubImage = url => /^https:\/\/(github\.com\/user-attachments\/|private-user-images\.githubusercontent\.com\/)/.test(url);
+function signedImages(html){
+  if(!html) return [];
+  return [...new DOMParser().parseFromString(html, 'text/html').querySelectorAll('img')].map(img=>img.getAttribute('src') || '');
+}
+function imgHTML(url, alt){
+  const nth = mdImageAt++;
+  if(!/^https:\/\//.test(url)) return esc(alt || url);
+  let src = url;
+  if(isGitHubImage(url)){
+    // Match on the attachment's id first; fall back to position if GitHub's URL hides it.
+    const id = url.match(UUID_RE)?.[0];
+    src = (id && mdImages?.find(s=>s.includes(id))) || mdImages?.[nth] || '';
+    if(!src) return `<a class="img-ph" href="${esc(url)}" target="_blank" rel="noopener">${mdImages ? 'เปิดรูปใน GitHub' : 'กำลังโหลดรูป…'}</a>`;
+  }
+  return `<a class="img" href="${esc(src)}" target="_blank" rel="noopener"><img src="${esc(src)}" alt="${esc(alt)}" loading="lazy"></a>`;
+}
+// Pulls ![alt](url) and <img src="..."> out of raw text before escaping, skipping code spans.
+function takeImages(t, keep){
+  const attr = (tag, k)=> tag.match(new RegExp(`\\b${k}\\s*=\\s*["']([^"']*)["']`, 'i'))?.[1] || '';
+  return t.split(/(`[^`]+`)/).map((part, n)=> n%2 ? part : part
+    .replace(/<img\b[^>]*>/gi, tag=> keep(imgHTML(attr(tag,'src'), attr(tag,'alt'))))
+    .replace(/!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g, (_, alt, url)=> keep(imgHTML(url, alt)))
+  ).join('');
+}
+
 function mdInline(t){
   // Finished links and code are parked as placeholders so later rules cannot rewrite inside them.
   const kept = [], keep = html => '\u0001' + (kept.push(html)-1) + '\u0002';
-  return esc(t)
+  return esc(takeImages(t, keep))
     .replace(/`([^`]+)`/g, (_, c)=> keep(`<code>${c}</code>`))
     .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (_, text, url)=> keep(extLink(url, text)))
     .replace(/https?:\/\/(?:(?!&quot;|&#39;|&gt;)[^\s<\u0001])+/g, m=>{
@@ -712,8 +747,8 @@ function mdTable(head, sep, rows){
   const tr = (cells, tag)=> '<tr>' + cols.map((_, n)=> cell(tag, cells[n], n)).join('') + '</tr>';
   return `<table><thead>${tr(cols,'th')}</thead><tbody>${rows.map(r=>tr(mdCells(r),'td')).join('')}</tbody></table>`;
 }
-function mdRender(src, repo=''){
-  mdRepo = repo;
+function mdRender(src, repo='', images=null){
+  mdRepo = repo; mdImages = images; mdImageAt = 0;
   if(!src.trim()) return '<p class="ph">ยังไม่มีรายละเอียด — กด "แก้ไข" เพื่อเขียน</p>';
   let html='', list=false, code=null, para=[], task=0;
   const flushP = ()=>{ if(para.length){ html += `<p>${para.map(mdInline).join('<br>')}</p>`; para=[]; } };
@@ -770,7 +805,7 @@ function setTab(tab){
   D.tab = tab;
   drawer.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on', b.dataset.tab===tab));
   $('#dPreview').hidden = tab!=='preview'; $('#dEdit').hidden = tab!=='edit';
-  if(tab==='preview') $('#dPreview').innerHTML = mdRender(D.body, curItem()?.repo); else $('#dEdit').focus();
+  if(tab==='preview') $('#dPreview').innerHTML = mdRender(D.body, curItem()?.repo, D.images); else $('#dEdit').focus();
 }
 function showState(i){
   const closed = i.state==='CLOSED' || i.state==='MERGED';
@@ -801,6 +836,18 @@ function openDrawer(id){
   drawer.querySelector('.d-head [data-close]').focus({preventScroll:true});
   $('#dCText').value = ''; D.sending = false; updateSend();
   loadComments(i);
+  loadBodyImages(i);
+}
+
+const qBodyHTML = `query($id:ID!){ node(id:$id){ ... on Issue{ bodyHTML } ... on PullRequest{ bodyHTML } } }`;
+async function loadBodyImages(i){
+  const d = D;
+  if(S.mode==='live' && i.type!=='DRAFT_ISSUE' && /user-attachments|private-user-images/.test(i.body || '')){
+    try{ d.images = signedImages((await gql(qBodyHTML, {id:i.contentId})).node?.bodyHTML); }
+    catch(e){ d.images = []; }
+  } else d.images = [];
+  // Only redraw if this card is still open, in preview, and actually has images.
+  if(D===d && d.tab==='preview' && /!\[|<img/i.test(d.body)) $('#dPreview').innerHTML = mdRender(d.body, i.repo, d.images);
 }
 
 const hasUnsentComment = ()=> !!(D && $('#dCText').value.trim());
@@ -897,7 +944,7 @@ $('#dLblPick').addEventListener('change', async e=>{
   e.target.disabled = false;
 });
 
-const qComments = `fragment CM on IssueCommentConnection{ totalCount nodes{ author{ login avatarUrl } body createdAt } }
+const qComments = `fragment CM on IssueCommentConnection{ totalCount nodes{ author{ login avatarUrl } body bodyHTML createdAt } }
 query($id:ID!){ node(id:$id){ ... on Issue{ comments(last:50){ ...CM } } ... on PullRequest{ comments(last:50){ ...CM } } } }`;
 async function loadComments(i){
   const sec = $('#dComments'), list = $('#dCList'), count = $('#dCCount');
@@ -920,7 +967,7 @@ async function loadComments(i){
     const who = n.author || {login:'ghost', avatarUrl:''};
     const when = new Date(n.createdAt).toLocaleString('th-TH', {dateStyle:'medium', timeStyle:'short'});
     // Checkboxes in a comment are read-only here; toggling them would need a comment edit.
-    const body = n.body.trim() ? mdRender(n.body, i.repo).replace(/<input type="checkbox"/g, '<input type="checkbox" disabled') : '<p class="ph">(ว่าง)</p>';
+    const body = n.body.trim() ? mdRender(n.body, i.repo, signedImages(n.bodyHTML)).replace(/<input type="checkbox"/g, '<input type="checkbox" disabled') : '<p class="ph">(ว่าง)</p>';
     return `<article class="cmt"><header>${personHTML(who)}<time>${esc(when)}</time></header><div class="md">${body}</div></article>`;
   }).join('');
 }
