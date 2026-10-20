@@ -89,6 +89,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 .foot{display:flex;align-items:center;margin-top:9px}
 .avatars{display:flex;margin-left:auto}
 .prog{font-size:12px;font-weight:700;color:var(--muted);background:var(--bg2);border-radius:99px;padding:1px 8px}
+.prog+.prog{margin-left:6px}
 .due{font-size:12px;font-weight:700;color:var(--muted);background:var(--bg2);border-radius:99px;padding:1px 8px;margin-right:6px}
 .due.soon{color:#e6a23c;background:#e6a23c22}
 .due.over{color:#ef6461;background:#ef646122}
@@ -603,7 +604,10 @@ function cardEl(i){
   const progress = tasks.length ? `<span class="prog" title="checklist">☑ ${doneT}/${tasks.length}</span>` : '';
   const labels = i.labels.length ? `<div class="labels">${i.labels.map(labelHTML).join('')}</div>` : '';
   const due = dueHTML(i);
-  const avatars = (i.assignees.length || progress || due) ? `<div class="foot">${due}${progress}<div class="avatars">${i.assignees.map(a=>
+  // Images in the description only; comments are not loaded until the card is opened.
+  const nImg = (i.body||'').replace(/```[\s\S]*?```|`[^`\n]+`/g, '').match(/!\[[^\]]*\]\(https?:\/\/[^\s)]+\)|<img\b[^>]*>/gi)?.length || 0;
+  const images = nImg ? `<span class="prog" title="มีรูป ${nImg} รูป">🖼 ${nImg}</span>` : '';
+  const avatars = (i.assignees.length || progress || due || images) ? `<div class="foot">${due}${progress}${images}<div class="avatars">${i.assignees.map(a=>
       a.avatarUrl ? `<img src="${esc(a.avatarUrl)}" alt="${esc(a.login)}" title="${esc(a.login)}">`
                   : `<span title="${esc(a.login)}">${esc(a.login[0]?.toUpperCase())}</span>`).join('')}</div></div>` : '';
   el.innerHTML = `<div class="meta"><span class="type ${i.type==='DRAFT_ISSUE'?'draft':closed?'closed':''}">${ICONS[i.type]||ICONS.ISSUE}</span><span>${where}</span>
